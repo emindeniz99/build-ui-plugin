@@ -69,19 +69,21 @@ jobs:
       - run: pnpm --dir js check ../examples/*.Jenkinsfile
 
   e2e:
-    name: browser (Jenkins ${{ matrix.line }})
+    name: browser (Jenkins ${{ matrix.line }}, ${{ matrix.browsers }})
     needs: [plugin, runtimes]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { line: "2.541", version: "2.541.1", bom: "7002.v028a_3607ddc8" }
-          - { line: "2.580", version: "2.580.1", bom: "7237.v5071b_f4589f1" }
+          # Every engine on the current LTS line; Chromium alone on the minimum line.
+          - { line: "2.541", version: "2.541.1", bom: "7002.v028a_3607ddc8", browsers: "chromium" }
+          - { line: "2.580", version: "2.580.1", bom: "7237.v5071b_f4589f1", browsers: "chromium,firefox,webkit" }
     env:
       JENKINS_LINE: ${{ matrix.line }}
       JENKINS_VERSION: ${{ matrix.version }}
       BOM_VERSION: ${{ matrix.bom }}
+      BROWSERS: ${{ matrix.browsers }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -98,7 +100,7 @@ jobs:
         with:
           node-version: "24.22.1"
       - run: pnpm --dir js install --frozen-lockfile
-      - run: pnpm --dir js exec playwright install --with-deps chromium
+      - run: pnpm --dir js exec playwright install --with-deps ${BROWSERS//,/ }
       - name: Start Jenkins with the plugin (development mode enforces CSP)
         run: |
           mvn -B -ntp -Djenkins.baseline="$JENKINS_LINE" -Djenkins.version="$JENKINS_VERSION" -Dbom.version="$BOM_VERSION" \
