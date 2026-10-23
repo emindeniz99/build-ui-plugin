@@ -60,7 +60,8 @@ export function tokenize(src) {
   return tokens;
 }
 
-/** Finds calls to `names` and collects their named arguments: { name, start, args: { key: token | { nonLiteral, start } } }. */
+/** Finds calls to `names` and collects their named arguments: { name, start, args: { key: token | { nonLiteral, start } } }.
+ * A plain `true` or `false` becomes { type: 'bool', value, start }. */
 export function findCalls(tokens, names) {
   const calls = [];
   for (let k = 0; k < tokens.length; k++) {
@@ -82,8 +83,10 @@ export function findCalls(tokens, names) {
       if (depth === 0 && u.type === 'id' && tokens[m + 1]?.value === ':') {
         const v = tokens[m + 2];
         // 'a' + b, '''x'''.stripIndent() and the like are not plain literals.
-        const plainLiteral = v?.type === 'str' && !OPERATORS.has(tokens[m + 3]?.value);
-        call.args[u.value] = plainLiteral ? v : { nonLiteral: true, start: u.start };
+        const plain = !OPERATORS.has(tokens[m + 3]?.value);
+        if (plain && v?.type === 'str') call.args[u.value] = v;
+        else if (plain && v?.type === 'id' && (v.value === 'true' || v.value === 'false')) call.args[u.value] = { type: 'bool', value: v.value === 'true', start: v.start };
+        else call.args[u.value] = { nonLiteral: true, start: u.start };
         m += 2;
         if (!paren) {
           const after = tokens[m + 1];
@@ -194,7 +197,7 @@ export async function checkSource(src) {
     const field = (key) => {
       if (!(key in call.args)) return undefined;
       const token = call.args[key];
-      if (token.nonLiteral) {
+      if (token.nonLiteral || token.type === 'bool') {
         report('warning', `${key} is not a plain string literal, so it was not checked`, token.start);
         return undefined;
       }
@@ -238,6 +241,16 @@ export async function checkSource(src) {
     }
     if (runtime === 'schema-form' && call.name === 'uiParameter' && schema !== undefined && schema?.type !== 'object') {
       report('error', `runtime 'schema-form' needs a schema whose type is "object"`, schemaToken?.start);
+    }
+    if ('sandbox' in call.args) {
+      const sandbox = call.args.sandbox;
+      if (sandbox.type === 'str') {
+        report('warning', `sandbox is the string '${sandbox.value}'; write true or false without quotes`, sandbox.start);
+      } else if (sandbox.nonLiteral) {
+        report('warning', 'sandbox is not a plain true or false, so it was not checked', sandbox.start);
+      } else if (sandbox.value && !['module', 'html', 'css'].some((key) => key in call.args)) {
+        report('warning', 'sandbox: true has no effect: this form runs no code of its own (no module, html or css)', sandbox.start);
+      }
     }
   }
   if (calls.length === 0) problems.push({ level: 'warning', line: 1, column: 1, message: 'no uiParameter or uiPanel call found' });

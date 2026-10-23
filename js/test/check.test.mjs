@@ -105,3 +105,19 @@ test('comments and strings that merely mention uiParameter are ignored', async (
     uiParameter(name: 'C', module: 'export default () => {}')`);
   assert.deepEqual(p, []);
 });
+
+test('sandbox takes a boolean, and is reported where it would sandbox nothing', async () => {
+  assert.deepEqual(await checkSource(`
+    uiParameter(name: 'A', sandbox: true, module: 'export default () => {}')
+    uiPanel title: 'P', sandbox: false, module: 'export default () => {}'`), []);
+  // A quoted 'true' is a string; the checker asks for the boolean the field declares.
+  const p = await checkSource(`
+    uiParameter(name: 'B', sandbox: 'true', module: 'export default () => {}')
+    uiParameter(name: 'C', sandbox: true, runtime: 'schema-form', schema: '{"type":"object"}')
+    uiParameter(name: 'D', sandbox: params.SANDBOX, module: 'export default () => {}')`);
+  assert.deepEqual(p.map((x) => [x.level, x.message]), [
+    ['warning', "uiParameter 'B': sandbox is the string 'true'; write true or false without quotes"],
+    ['warning', "uiParameter 'C': sandbox: true has no effect: this form runs no code of its own (no module, html or css)"],
+    ['warning', "uiParameter 'D': sandbox is not a plain true or false, so it was not checked"],
+  ]);
+});
