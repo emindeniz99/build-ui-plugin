@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import hudson.model.Result;
+import hudson.model.Run;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
@@ -30,6 +31,16 @@ class UiPanelStepTest {
         String page = wc.getPage(run).getWebResponse().getContentAsString();
         assertTrue(page.contains("Deploy summary"), "panel title missing");
         assertTrue(page.contains("data-module=\"" + panel.getModuleKey() + "\""), "panel module missing");
+    }
+
+    @Test
+    void aRuntimeReadFromBuildXmlIsCheckedLikeOneFromTheStep(JenkinsRule j) {
+        // host.js imports runtimes/<id>.js, so a path stored in build.xml would load any same-origin script.
+        String xml = Run.XSTREAM2.toXML(new UiPanelAction("t", Runtimes.NONE, null, null, null, "{}"));
+        assertTrue(xml.contains("<runtime>none</runtime>"), xml);
+        UiPanelAction loaded = (UiPanelAction) Run.XSTREAM2.fromXML(xml.replace("<runtime>none</runtime>", "<runtime>../../ws/evil</runtime>"));
+        assertEquals(Runtimes.PREACT, loaded.getRuntime());
+        assertEquals("{}", loaded.getData());
     }
 
     @Test

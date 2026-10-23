@@ -1,6 +1,8 @@
 package io.jenkins.plugins.buildui;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import hudson.model.FreeStyleBuild;
@@ -10,10 +12,13 @@ import hudson.model.ParametersDefinitionProperty;
 import hudson.model.PasswordParameterDefinition;
 import hudson.model.StringParameterValue;
 import hudson.util.Secret;
+import java.io.StringReader;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import javax.xml.transform.Source;
+import javax.xml.transform.stream.StreamSource;
 import org.htmlunit.Page;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
@@ -72,6 +77,49 @@ class SurfacesTest {
             Matcher m = Pattern.compile("data-module=\"([0-9a-f]{64}\\.mjs)\"").matcher(html);
             assertTrue(m.find(), "no module key on the form");
             assertEquals(200, wc.goTo("build-ui/" + m.group(1), null).getWebResponse().getStatusCode());
+        });
+    }
+
+    @Test
+    void aRuntimeFromConfigXmlIsCheckedLikeOneFromTheForm() throws Throwable {
+        sessions.then(j -> {
+            // config.xml (REST, CLI) bypasses the setter. host.js imports runtimes/<id>.js, so a path
+            // there would load any same-origin script, and a form with no code skips approval.
+            BuildUiConfiguration.get().setRequireApproval(true);
+            FreeStyleProject p = j.createFreeStyleProject("free");
+            UiParameterDefinition d = new UiParameterDefinition("CFG");
+            d.setSchema("{\"type\":\"object\"}");
+            p.addProperty(new ParametersDefinitionProperty(d));
+            String xml = p.getConfigFile().asString();
+            assertTrue(xml.contains("<runtime>preact11-htm3</runtime>"), xml);
+            p.updateByXml((Source) new StreamSource(new StringReader(
+                    xml.replace("<runtime>preact11-htm3</runtime>", "<runtime>../../../../job/free/ws/evil</runtime>"))));
+
+            UiParameterDefinition loaded = (UiParameterDefinition) p.getProperty(ParametersDefinitionProperty.class).getParameterDefinition("CFG");
+            assertEquals(Runtimes.PREACT, loaded.getRuntime());
+            JenkinsRule.WebClient wc = j.createWebClient().withThrowExceptionOnFailingStatusCode(false);
+            wc.getOptions().setJavaScriptEnabled(false);
+            String html = wc.goTo("job/free/build?delay=0sec").getWebResponse().getContentAsString();
+            assertFalse(html.contains("evil"), "the stored path reached the page");
+            assertTrue(html.contains("data-runtime=\"preact11-htm3\""), "form missing");
+        });
+    }
+
+    @Test
+    void anInvalidDefaultKeepsTheRestApiWorkingAndStillStartsNoBuild() throws Throwable {
+        sessions.then(j -> {
+            FreeStyleProject p = j.createFreeStyleProject("free");
+            UiParameterDefinition d = definition();
+            // Valid JSON, but past the schema's maximum, as after a schema change.
+            d.setDefaultJson("{\"n\":9}");
+            p.addProperty(new ParametersDefinitionProperty(d));
+
+            // The default is exported; one stale default must not turn the job's whole API into a 500.
+            Page api = j.createWebClient().goTo("job/free/api/json?depth=1", "application/json");
+            assertTrue(api.getWebResponse().getContentAsString().contains("\"name\":\"CFG\""), api.getWebResponse().getContentAsString());
+            // A build that would use the default is still refused.
+            assertNull(p.scheduleBuild2(0));
+            assertNull(p.getLastBuild());
         });
     }
 

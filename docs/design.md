@@ -174,8 +174,18 @@ validates them and nobody approves them. Choices and the facts behind them:
   outside the subset fails when the job is configured.
 - `schema` and `defaultJson` must parse when the job is configured. The
   default is checked against the schema when a build uses it, and by the form
-  check on the freestyle configuration page; an invalid default fails that
-  build with the reason.
+  check on the freestyle configuration page; `QueueGuard` refuses a build
+  that would use an invalid default and logs the reason. The default getter
+  itself does not throw, because the REST API exports it and a throwing
+  getter dropped the parameter from `job/<name>/api/json`.
+- The form checks (`checkSchema`, `checkDefaultJson`) need Item/Configure,
+  or Overall/Administer outside a job: the caller supplies both the schema
+  and the value, so each check costs controller CPU.
+- The runtime ID is checked on every path that sets it: the setter, and
+  `readResolve` for `config.xml` (REST, CLI) and `build.xml`, which bypass
+  the setter. An unknown ID becomes `preact11-htm3` with a warning in the
+  log. `host.js` builds the import URL from the ID, so an unchecked ID could
+  load any same-origin script, and a form without code needs no approval.
 - `params.BUILD_CONFIG` is a compact JSON string. Values over 32 KiB are not
   exported as an environment variable.
 - A 32 KiB value in the `buildWithParameters` query string did not start a
