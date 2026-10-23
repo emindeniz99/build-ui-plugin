@@ -11,14 +11,16 @@ public class UiPanelAction extends InvisibleAction {
     private final String html;
     private final String css;
     private final String data;
+    private final boolean sandbox;
 
-    UiPanelAction(String title, String runtime, String module, String html, String css, String data) {
+    UiPanelAction(String title, String runtime, String module, String html, String css, String data, boolean sandbox) {
         this.title = title;
         this.runtime = runtime;
         this.module = module;
         this.html = html;
         this.css = css;
         this.data = data;
+        this.sandbox = sandbox;
     }
 
     public String getTitle() {
@@ -33,9 +35,14 @@ public class UiPanelAction extends InvisibleAction {
         return data;
     }
 
+    /** True when this panel's code runs in a sandboxed iframe. */
+    public boolean isSandboxed() {
+        return SandboxAction.applies(sandbox, module, html, css);
+    }
+
     /** False only when an admin requires approval and this panel's code has none yet. */
     public boolean isApproved() {
-        return FormApproval.allowed(runtime, module, html, css, UiParameterDefinition.requestJob(), "panel:" + title);
+        return FormApproval.allowed(runtime, module, html, css, isSandboxed(), UiParameterDefinition.requestJob(), "panel:" + title);
     }
 
     public String getModuleKey() {

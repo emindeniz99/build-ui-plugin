@@ -4,6 +4,9 @@
     <f:entry field="requireApproval" description="${%Off by default. When on, a form or panel with a module, HTML or CSS shows only a JSON field until an administrator approves its exact code under In-process Script Approval.}">
       <f:checkbox title="${%Require approval of form code}"/>
     </f:entry>
+    <f:entry field="sandboxAll" description="${%Off by default. When on, the code of every form and panel runs in a sandboxed iframe, as if each one set sandbox: true. The code then cannot read the page, the cookies or Jenkins's API; it reaches data only through ui.query.}">
+      <f:checkbox title="${%Run all form code in a sandbox}"/>
+    </f:entry>
     <f:entry title="${%ArgoCD servers}" description="${%Servers whose application status build-ui forms may read through the argoCdApp data provider.}">
       <f:repeatableProperty field="argoCdServers" add="${%Add ArgoCD server}"/>
     </f:entry>

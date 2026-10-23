@@ -18,6 +18,9 @@
   <f:entry title="${%CSS}" field="css">
     <f:textarea/>
   </f:entry>
+  <f:entry field="sandbox">
+    <f:checkbox title="${%Run the form code in a sandboxed iframe}"/>
+  </f:entry>
   <f:entry title="${%JSON Schema}" field="schema">
     <f:textarea checkMethod="post"/>
   </f:entry>

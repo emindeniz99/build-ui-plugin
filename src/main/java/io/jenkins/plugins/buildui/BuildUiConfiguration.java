@@ -14,6 +14,7 @@ public class BuildUiConfiguration extends GlobalConfiguration {
 
     private List<ArgoCdServer> argoCdServers = new ArrayList<>();
     private boolean requireApproval;
+    private boolean sandboxAll;
 
     public BuildUiConfiguration() {
         load();
@@ -41,6 +42,20 @@ public class BuildUiConfiguration extends GlobalConfiguration {
     @DataBoundSetter
     public void setRequireApproval(boolean requireApproval) {
         this.requireApproval = requireApproval;
+        save();
+    }
+
+    /**
+     * Off by default: only forms that ask for it ({@code sandbox: true}) run in
+     * a sandboxed iframe. When on, every form or panel with code does.
+     */
+    public boolean isSandboxAll() {
+        return sandboxAll;
+    }
+
+    @DataBoundSetter
+    public void setSandboxAll(boolean sandboxAll) {
+        this.sandboxAll = sandboxAll;
         save();
     }
 

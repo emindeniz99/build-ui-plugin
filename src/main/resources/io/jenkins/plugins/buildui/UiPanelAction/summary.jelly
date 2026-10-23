@@ -14,7 +14,8 @@
                data-runtime="${it.runtime}"
                data-module="${it.moduleKey}"
                data-css="${it.cssKey}"
-               data-html="${it.htmlKey}"/>
+               data-html="${it.htmlKey}"
+               data-sandbox="${it.sandboxed}"/>
           <textarea class="build-ui-value" hidden="hidden" readonly="readonly">${it.data}</textarea>
           <script type="module" src="${resURL}/plugin/build-ui/host.js"/>
         </j:when>

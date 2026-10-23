@@ -19,7 +19,8 @@
                data-module="${it.moduleKey}"
                data-css="${it.cssKey}"
                data-html="${it.htmlKey}"
-               data-schema="${it.schema}"/>
+               data-schema="${it.schema}"
+               data-sandbox="${it.sandboxed}"/>
         </j:when>
         <j:otherwise>
           <p class="build-ui-pending">${%The code of this form waits for approval by an administrator under In-process Script Approval. Until then, enter the value as JSON.}</p>
