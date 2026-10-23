@@ -1,0 +1,17 @@
+<?jelly escape-by-default='true'?>
+<!-- A uiPanel on the build page. Same markup as the parameter, so host.js mounts it the same way. -->
+<j:jelly xmlns:j="jelly:core">
+  <tr>
+    <td colspan="2" class="build-ui-panel">
+      <h2>${it.title}</h2>
+      <div class="build-ui-root"
+           data-name="${it.title}"
+           data-runtime="${it.runtime}"
+           data-module="${it.moduleKey}"
+           data-css="${it.cssKey}"
+           data-html="${it.htmlKey}"/>
+      <textarea class="build-ui-value" hidden="hidden" readonly="readonly">${it.data}</textarea>
+      <script type="module" src="${resURL}/plugin/build-ui/host.js"/>
+    </td>
+  </tr>
+</j:jelly>
