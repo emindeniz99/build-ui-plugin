@@ -1,0 +1,10 @@
+# Maven build output and the Jenkins home that `mvn hpi:run` creates
+target/
+work/
+
+# Lab and frontend tooling
+node_modules/
+
+# Local secrets (the repo root has the same safety net; it does not survive graduation)
+.env
+.env.*
