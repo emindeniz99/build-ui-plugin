@@ -43,6 +43,13 @@ public final class ContentStore {
         }
     }
 
+    /** Empties the store, as a controller restart does. For tests. */
+    static void clear() {
+        synchronized (ENTRIES) {
+            ENTRIES.clear();
+        }
+    }
+
     static String sha256(byte[] bytes) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
