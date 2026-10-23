@@ -84,7 +84,8 @@ sheet.replaceSync(`
   .field { display: grid; gap: .25rem; }
   fieldset { display: grid; gap: .25rem; border: 1px solid var(--input-border, #ccc); border-radius: .4rem; }
   .choice { display: flex; gap: .4rem; align-items: center; }
-  .help { color: var(--text-color-secondary, #666); }
+  /* Jenkins 2.541 --text-color-secondary is under 4.5:1 on its background; see host.js. */
+  .help { color: color-mix(in oklch, var(--text-color-secondary, #666) 60%, var(--text-color, #000)); }
   input:not([type=checkbox]), select, textarea { font: inherit; padding: .3rem .4rem; }
 `);
 

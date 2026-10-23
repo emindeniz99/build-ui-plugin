@@ -34,8 +34,8 @@ export default function mount({ root, ui, runtime: { html, render, useState, use
       <//>
       <${Section} title="Deploy">
         <label><input type="checkbox" name="deploy" checked=${c.deploy} onChange=${(e) => set({ deploy: e.currentTarget.checked })} /> Deploy</label>
-        ${c.deploy && html`<select name="env" value=${c.env} onChange=${(e) => set({ env: e.currentTarget.value })}>
-          ${['dev', 'staging', 'prod'].map((e) => html`<option>${e}</option>`)}</select>`}
+        ${c.deploy && html`<label>Environment <select name="env" value=${c.env} onChange=${(e) => set({ env: e.currentTarget.value })}>
+          ${['dev', 'staging', 'prod'].map((e) => html`<option>${e}</option>`)}</select></label>`}
       <//>
       <${Section} title="Recent builds">
         <ul class="runs">${runs.map((r) => html`<li>#${r.number} ${r.result || 'running'}</li>`)}</ul>

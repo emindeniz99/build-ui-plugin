@@ -11,7 +11,8 @@ const runtimeURL = (id) => `${resURL}/plugin/build-ui/runtimes/${id}.js`;
 const baseSheet = new CSSStyleSheet();
 baseSheet.replaceSync(`
   :host { display: block; color: var(--text-color, inherit); font: inherit; }
-  .build-ui-error { color: var(--error-color, #c00); white-space: pre-wrap; }
+  /* Jenkins 2.541 --error-color is under 4.5:1 on its background; mixing in the text color keeps the hue and passes, in light and dark themes. */
+  .build-ui-error { color: color-mix(in oklch, var(--error-color, #c00) 65%, var(--text-color, #000)); white-space: pre-wrap; }
 `);
 
 const runtimes = new Map();
@@ -74,6 +75,13 @@ async function mountOne(el) {
   const { signal } = controller;
   const shadow = el.attachShadow({ mode: 'open' });
   shadow.adoptedStyleSheets = [baseSheet];
+  // Outside the shadow root a key event's target is this host, not the field, so
+  // page shortcuts that skip typing in fields (Jenkins's "/" focuses search) would
+  // fire while someone types "feature/x". Keys typed in a field stay in the form.
+  el.addEventListener('keydown', (e) => {
+    const t = e.composedPath()[0];
+    if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) e.stopPropagation();
+  });
   let cleanup = null;
   const unmount = () => {
     if (signal.aborted) return;

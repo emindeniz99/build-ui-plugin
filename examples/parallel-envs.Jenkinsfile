@@ -17,7 +17,7 @@ pipeline {
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: .5rem; }
         .card { border: 1px solid var(--input-border, #ccc); border-radius: .4rem; padding: .5rem; }
         .card.on { border-color: var(--accent-color, #0b6aa2); box-shadow: 0 0 0 1px var(--accent-color, #0b6aa2); }
-        .last { color: var(--text-color-secondary, #666); font-size: .85em; }
+        .last { color: color-mix(in oklch, var(--text-color-secondary) 60%, var(--text-color)); font-size: .85em; }
         .row { display: flex; gap: .75rem; align-items: center; margin: .5rem 0; flex-wrap: wrap; }''',
       module: '''
 const ENVS = ['env-1', 'env-2', 'env-3', 'env-4', 'env-5', 'env-6', 'stress-test', 'nightly']
