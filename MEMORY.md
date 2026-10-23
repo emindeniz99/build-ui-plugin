@@ -13,7 +13,7 @@ session scratchpad; bring it into `lab/` as a pnpm project in Phase 0.
 ## Decisions
 
 - 2026-10-23: plugin ID `build-ui`, Jenkinsfile symbol `uiParameter` — every planned surface belongs to a run
-- 2026-10-23: minimum Jenkins 2.541.1, Java 17 — owner's Jenkins, oldest LTS line with core CSP
+- 2026-10-23: minimum Jenkins 2.541.1, Java 17 — oldest LTS line with core CSP
 - 2026-10-23: v1 runtimes `none` + `preact11-htm3`; Solid 2 after its stable release — RC is not a production dependency
 - 2026-10-23: no approval of form code in v1 (owner) — owner trusts everyone with push access and wants no friction; approval maybe later, not planned
 - 2026-10-23: design lives in `docs/design.md`, not in issue #94 — the issue stays behind at graduation

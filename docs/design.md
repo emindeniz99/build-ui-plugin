@@ -19,7 +19,7 @@ original RFC is issue #94; the design here replaces it where they disagree.
 |---|---|---|
 | Plugin ID | `build-ui`, groupId `io.jenkins.plugins`, Jenkinsfile symbol `uiParameter` | All planned surfaces belong to a run. Follows update-center naming rules, so hosting there later costs nothing. |
 | Publishing | GitHub Releases (`.hpi`) first; the Jenkins update center at graduation | No hosting review on the critical path. |
-| Jenkins / Java | Minimum 2.541.1, Java 17 bytecode; CI covers 2.541.x and the current LTS | 2.541 is the owner's Jenkins and the oldest LTS line with core CSP. |
+| Jenkins / Java | Minimum 2.541.1, Java 17 bytecode; CI covers 2.541.x and the current LTS | 2.541 is the oldest LTS line with core CSP. |
 | Core | Framework-agnostic; knows only the `mount` contract (section 2) | A runtime can come and go without a core rewrite. |
 | v1 runtimes | `none` and `preact11-htm3` | One stable React-style renderer plus plain JS. |
 | Later runtimes | `solid2-html` once Solid 2.0 ships stable and wins the comparison in section 7 | It passes strict CSP as an RC; an RC is not a production dependency. |
