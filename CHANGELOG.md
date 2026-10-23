@@ -36,8 +36,8 @@ The first release. It needs Jenkins 2.541.1 or newer and Java 17.
 - Works with Jenkins's enforced Content Security Policy and never loosens it.
 - JSON limits: 256 KiB, depth 32, 1000 items or properties; regular
   expressions in schemas run with a 50 ms budget per value.
-- Accessible: no axe violations in the shipped runtimes, examples and error
-  fallback; forms work with the keyboard, typing "/" included; colors follow
+- Accessible: no axe violations in the reference and parallel-envs examples,
+  a `schema-form` form and the error fallback; forms work with the keyboard, typing "/" included; colors follow
   the Jenkins theme and meet 4.5:1 contrast.
 - A Jenkinsfile checker: `pnpm --dir projects/jenkins-ui/js check <file>`.
 - Examples: a reference form, parallel environment deploys and a release

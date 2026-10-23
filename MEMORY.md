@@ -5,8 +5,9 @@ significant work; prune past ~100 lines. Details: `.claude/skills/memory/SKILL.m
 
 ## Now
 
-Feature-complete for 0.1.0 and tested on 2.541.1 and 2.580.1 (59 JenkinsRule,
-18 browser, 11 checker tests): parameter, `input` step, `uiPanel`,
+Feature-complete for 0.1.0 and tested on 2.541.1 and 2.580.1 (36 JenkinsRule,
+14 plain unit, 18 browser, 11 checker tests; Maven counts 59 Java tests: our 50
+plus 9 from the plugin parent, 1 skipped): parameter, `input` step, `uiPanel`,
 `schema-form`, `jenkinsRuns`, `gitRefs`, `argoCdApp`, optional approval, the Jenkinsfile
 checker, accessibility checks. Release workflow ready; no tag pushed (owner
 decides). GitHub Actions has run no push-triggered workflow in this repo since
@@ -32,7 +33,7 @@ never run locally (only Chromium is installed here). Open items:
 - 2026-10-23: release by tag jenkins-ui-v<semver>; the .hpi goes to GitHub Releases, never git
 - 2026-10-23: ArgoCD servers are admin config (UI or JCasC); the browser names an app, never a server URL; cache key is URL + credentials + app
 - 2026-10-23: x-git-ref checks run on every queued build (defaults included) in RefGuard, a QueueTaskDispatcher that lists refs on a pool thread and cancels the item; never in QueueGuard — review finding: Git I/O under the queue lock stalled every job
-- 2026-10-23: Dependabot cooldowns are all 7 days, matching pnpm minimumReleaseAge
+- 2026-10-23: Dependabot cooldowns for jenkins-ui: minor and patch 7 days, matching pnpm minimumReleaseAge; major 30 days
 
 ## Learnings
 

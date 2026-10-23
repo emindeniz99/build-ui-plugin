@@ -220,8 +220,14 @@ stricter one (`style-src 'self'`).
 
 | Result | Libraries |
 |---|---|
-| Pass | vanilla JS, vanilla custom element, Preact 11.0.1 + htm 3.1.1 (hooks and signals), lit-html 3.3.3, LitElement, Solid 2.0.0-rc.17 + `@solidjs/html`, uhtml 5.0.9, Arrow 1.0.6, VanJS 1.6.1, Mithril 2.3.8, `@alpinejs/csp` 3.17.5 |
-| Fail with `EvalError` | `solid-js/html` 1.9.17, Vue 3.5.44 runtime compiler, petite-vue 0.4.1, Alpine 3.17.5 |
+| Pass | vanilla JS, vanilla custom element, Preact 11.0.1 + htm 3.1.1 (hooks and signals), lit-html 3.3.3, LitElement, Solid 2.0.0-rc.15 + `@solidjs/html`, uhtml 5.0.9, Arrow 1.0.6, VanJS 1.6.1, Mithril 2.3.8, `@alpinejs/csp` 3.17.4 |
+| Fail with `EvalError` | `solid-js/html` 1.9.17, Vue 3.5.44 runtime compiler, petite-vue 0.4.1, Alpine 3.17.4 |
+
+Versions are the ones in `js/pnpm-lock.yaml`, and `js/lab/run3.mjs` reproduces
+every row except `solid-js/html` 1.9.17. That row was measured outside the lab:
+the lab has no Solid 1.x page or dependency. An earlier draft of this table
+recorded Solid 2.0.0-rc.17 and Alpine 3.17.5; the lab pins rc.15 and 3.17.4, and
+no run on the newer versions is recorded.
 
 Bundled with esbuild, minified, gzip: lit-html 3.5 KB, Preact + htm 6.5 KB,
 Preact + htm + signals 8.9 KB, Solid 2.0 RC + html 20.2 KB.

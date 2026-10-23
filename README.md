@@ -27,8 +27,10 @@ frontend build step.
 ## Status
 
 0.1.0 is ready to release (see [`CHANGELOG.md`](./CHANGELOG.md)); no tag is
-pushed yet. Tested on Jenkins 2.541.1 and 2.580.1: 59 JenkinsRule tests and 18
-browser tests (Chromium) under enforced CSP, plus 11 checker tests. CI also
+pushed yet. Tested on Jenkins 2.541.1 and 2.580.1: 36 JenkinsRule tests, 14
+plain unit tests, 18 browser tests (Chromium) under enforced CSP and 11
+checker tests. Maven reports 59 Java tests: our 50 plus 9 that the plugin
+parent generates, one of them skipped. CI also
 runs the browser tests in Firefox and WebKit on 2.580.1. The reference
 form is [`examples/reference.Jenkinsfile`](./examples/reference.Jenkinsfile)
 (53 lines). Design, measurements and open questions:
