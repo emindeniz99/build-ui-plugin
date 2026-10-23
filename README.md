@@ -112,6 +112,10 @@ If `mount` throws, the page shows the error and a JSON textarea, so a build can
 still start. If your module renders custom elements, wait for them with
 `customElements.whenDefined` before you render.
 
+Character keys typed in a field inside `root` stop at the form, so Jenkins's
+`/` and Ctrl+K shortcuts do not fire while someone types. Escape, the arrow
+keys, Enter and Tab reach `document` and `window` listeners as usual.
+
 ### Runtimes
 
 - `preact11-htm3`: Preact 11.0.1 and htm 3.1.1. `runtime` holds `html`, `h`,
@@ -190,6 +194,8 @@ uiPanel title: 'Deploy summary', data: '{"env":"staging","services":["api"]}',
 
 `uiPanel` takes `title`, `data` (JSON, read as `ui.value`), `module`, `html`,
 `css` and `runtime`, and draws on the build's page with the same contract.
+`ui.job` is the build's job; `ui.schema` is `null`, because a panel has no
+schema.
 
 ### `input` step
 

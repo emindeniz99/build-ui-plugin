@@ -11,6 +11,7 @@
         <j:when test="${it.approved}">
           <div class="build-ui-root"
                data-name="${it.title}"
+               data-job="${it.jobFullName}"
                data-runtime="${it.runtime}"
                data-module="${it.moduleKey}"
                data-css="${it.cssKey}"

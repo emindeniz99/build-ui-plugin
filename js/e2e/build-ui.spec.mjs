@@ -171,3 +171,112 @@ test('uiPanel draws a panel on the build page from the run data', async ({ page,
   expect(problems, problems.join('\n')).toEqual([]);
 });
 
+test('a panel gets the same ui.job as a form, and a failing panel does not ask for edits', async ({ page, request }) => {
+  // Panels call providers with { job: ui.job } as forms do; an empty name gets a 400.
+  await pipelineJob(request, 'panel-job', `
+    uiPanel title: 'Job', data: '{}', module: 'export default function mount({ root, ui }) { root.textContent = "job=" + ui.job }'
+    uiPanel title: 'Broken', data: '{"a":1}', module: 'export default function mount() { throw new Error("boom") }'`);
+  const n = await build(request, 'panel-job');
+  await page.goto(`job/panel-job/${n}/`);
+  await expect(page.locator('.build-ui-container')).toHaveText('job=panel-job');
+  // The panel's textarea is read-only and submits nothing, so the message must not say "edit".
+  await expect(page.getByRole('alert')).toContainText('This panel could not load; its data is shown below.');
+  await expect(page.getByRole('alert')).toContainText('boom');
+});
+
+/** A job with one form whose module (runtime none) is `module`. */
+async function moduleJob(request, name, module) {
+  await pipelineJob(request, name, `
+    pipeline { agent none
+      parameters { uiParameter(name: 'CFG', runtime: 'none', module: '''${module}''') }
+      stages { stage('s') { steps { echo 'ok' } } } }`);
+  await build(request, name);
+}
+
+test('the host refuses a runtime ID that is a path, so data-runtime cannot load another script', async ({ page, request }) => {
+  await moduleJob(request, 'runtime-id', 'export default function mount({ root }) { root.textContent = "ok" }');
+  const fetched = [];
+  await page.route('**/evil.js', (route) => {
+    fetched.push(route.request().url());
+    return route.fulfill({ contentType: 'text/javascript', body: 'window.__evil = true' });
+  });
+  await page.goto('job/runtime-id/build?delay=0sec');
+  await expect(page.locator('.build-ui-root[data-mounted="true"]')).toBeVisible();
+  // What a hand-written config.xml can put in data-runtime: dot segments that leave runtimes/
+  // and reach a same-origin file a build wrote, such as a workspace or artifact file.
+  await page.evaluate(() => {
+    const box = document.createElement('div');
+    box.innerHTML = '<div class="build-ui-root" data-name="X" data-runtime="../../../../userContent/evil"></div>'
+      + '<textarea class="build-ui-value">{}</textarea>';
+    document.querySelector('.build-ui').after(box);
+  });
+  await expect(page.getByRole('alert')).toContainText('unknown runtime');
+  expect(fetched).toEqual([]);
+  expect(await page.evaluate(() => window.__evil)).toBeUndefined();
+});
+
+test('ui.query reports the HTTP status when Jenkins answers with an HTML error page', async ({ page, request }) => {
+  await moduleJob(request, 'query-error', `
+    export default async function mount({ root, ui }) {
+      try { await ui.query('jenkinsRuns', { job: ui.job }) } catch (e) { root.textContent = e.message }
+    }`);
+  // Jenkins answers a missing permission, a stale session or a provider crash with HTML.
+  await page.route('**/build-ui/query/**', (route) =>
+    route.fulfill({ status: 403, contentType: 'text/html', body: '<html><body>Access denied</body></html>' }));
+  await page.goto('job/query-error/build?delay=0sec');
+  await expect(page.locator('.build-ui-container')).toHaveText('query jenkinsRuns failed: HTTP 403');
+});
+
+test('a form removed while its module is still loading is never mounted', async ({ page, request }) => {
+  // This module stops its interval only through the signal, as the contract allows. If the
+  // host mounted it with a signal that had already fired, the interval would never stop.
+  await moduleJob(request, 'gone-early', `
+    export default function mount({ signal }) {
+      window.__mounted = true
+      const id = setInterval(() => { window.__ticks = (window.__ticks || 0) + 1 }, 50)
+      signal.addEventListener('abort', () => clearInterval(id))
+    }`);
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  await page.route('**/build-ui/*.mjs', async (route) => { await gate; await route.continue(); });
+  const requested = page.waitForRequest('**/build-ui/*.mjs');
+  await page.goto('job/gone-early/build?delay=0sec', { waitUntil: 'domcontentloaded' });
+  await requested;
+  await page.locator('.build-ui-root').evaluate((el) => el.closest('[name=parameter]').remove());
+  const loaded = page.waitForResponse('**/build-ui/*.mjs');
+  release();
+  await loaded;
+  await page.waitForTimeout(500);
+  expect(await page.evaluate(() => [window.__mounted, window.__ticks])).toEqual([undefined, undefined]);
+});
+
+test('a page kept for the back button keeps its forms; a page that is left unmounts them', async ({ page, request }) => {
+  await moduleJob(request, 'bfcache', `
+    export default function mount({ root }) {
+      root.textContent = 'mounted'
+      return () => { window.__cleaned = (window.__cleaned || 0) + 1 }
+    }`);
+  await page.goto('job/bfcache/build?delay=0sec');
+  await expect(page.locator('.build-ui-root[data-mounted="true"]')).toBeVisible();
+  // persisted: true means the browser keeps the page and shows it again on Back, as it was.
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  expect(await page.evaluate(() => window.__cleaned)).toBeUndefined();
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
+  expect(await page.evaluate(() => window.__cleaned)).toBe(1);
+});
+
+test('keys typed in a field stay out of Jenkins shortcuts, but Escape still reaches the module', async ({ page, request }) => {
+  // Closing a dropdown on Escape with a document listener is the usual pattern.
+  await moduleJob(request, 'keys', `
+    export default function mount({ root, signal }) {
+      root.innerHTML = '<label>Search <input></label>'
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.__escape = true }, { signal })
+    }`);
+  await page.goto('job/keys/build?delay=0sec');
+  const field = page.getByLabel('Search');
+  await field.pressSequentially('feature/x');
+  await expect(field).toHaveValue('feature/x');
+  await expect(field).toBeFocused();
+  await field.press('Escape');
+  expect(await page.evaluate(() => window.__escape)).toBe(true);
+});
