@@ -108,6 +108,45 @@ class GitRefsProviderTest {
     }
 
     @Test
+    void versionOrderIsConsistentSoSortingMixedTagsCannotThrow() {
+        // TimSort throws "Comparison method violates its general contract" on an inconsistent order.
+        List<String> tags = List.of("v1.0.0", "v1.0.0-rc1", "v1.0.0+build1", "v1.0.0.1", "v1.0.0 x", "v1.0.0_a",
+                "v1.0.0-rc1+b", "v1.0", "v1", "v1.0.0-", "v1.0.0+", "1.0.0", "v01.0.0", "va", "v");
+        for (String a : tags) {
+            for (String b : tags) {
+                assertEquals(Integer.signum(GitRefsProvider.compareVersions(a, b)),
+                        -Integer.signum(GitRefsProvider.compareVersions(b, a)), a + " vs " + b);
+                for (String c : tags) {
+                    if (GitRefsProvider.compareVersions(a, b) < 0 && GitRefsProvider.compareVersions(b, c) < 0) {
+                        assertTrue(GitRefsProvider.compareVersions(a, c) < 0, a + " < " + b + " < " + c);
+                    }
+                }
+            }
+        }
+        assertTrue(GitRefsProvider.compareVersions("v1.0.0-rc1", "v1.0.0") < 0);
+        assertTrue(GitRefsProvider.compareVersions("v1.0.0", "v1.0.0+build1") < 0);
+    }
+
+    @Test
+    void theRefCacheHoldsABoundedNumberOfEntriesSoDeletedJobsDoNotLeakMemory() {
+        // Every job, branch job and pull request job that was ever queried used to stay in memory.
+        for (int i = 0; i < GitRefsProvider.CACHE_ENTRIES * 2; i++) {
+            GitRefsProvider.remember("job-" + i + "\nurl\n", java.util.Map.of("refs/heads/main", "0".repeat(40)));
+        }
+        assertEquals(GitRefsProvider.CACHE_ENTRIES, GitRefsProvider.cacheSize());
+    }
+
+    @Test
+    void xGitRefUnderAdditionalPropertiesIsEnforcedToo(JenkinsRule j) throws Exception {
+        // Schema.check accepts x-git-ref there, so leaving it unchecked would be a rule the author believes in but nobody enforces.
+        WorkflowJob job = job(j, "app", "");
+        UiParameterDefinition d = new UiParameterDefinition("CFG");
+        d.setSchema("{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\",\"x-git-ref\":\"tag\"}}");
+        assertEquals(List.of("/svc: 'v9.9.9' is not a tag of app's repository"), d.errorsFor("{\"svc\":\"v9.9.9\"}", job));
+        assertEquals(List.of(), d.errorsFor("{\"svc\":\"v1.1\"}", job));
+    }
+
+    @Test
     void globFiltersAreQuotedSoRegexCharactersMatchLiterally() {
         assertTrue(GitRefsProvider.glob("release/2026.10", "x").matcher("release/2026.10").matches());
         assertTrue(!GitRefsProvider.glob("release/2026.10", "x").matcher("release/2026x10").matches());

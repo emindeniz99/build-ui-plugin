@@ -170,10 +170,13 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
             }
         }
         JsonNode props = schema.path("properties");
+        JsonNode extra = schema.get("additionalProperties");
         if (value.isObject()) {
             value.fields().forEachRemaining(e -> {
                 if (props.has(e.getKey())) {
                     checkRefs(props.get(e.getKey()), e.getValue(), at + "/" + e.getKey(), job, errors);
+                } else if (extra != null) {
+                    checkRefs(extra, e.getValue(), at + "/" + e.getKey(), job, errors);
                 }
             });
         }
