@@ -31,7 +31,11 @@ jobs:
       matrix:
         include:
           # The minimum line on the lowest Java it supports, and the current LTS line.
-          - { line: "2.541", version: "2.541.1", bom: "7002.v028a_3607ddc8", java: "17" }
+          # The minimum line sets no versions: it builds pom.xml's own
+          # jenkins.version and bom.version, so a Dependabot bump of either is
+          # built on its PR. Keep its `line` label equal to pom.xml's
+          # jenkins.baseline. The current-LTS versions are bumped here by hand.
+          - { line: "2.541", java: "17" }
           - { line: "2.580", version: "2.580.1", bom: "7237.v5071b_f4589f1", java: "21" }
     env:
       JENKINS_LINE: ${{ matrix.line }}
@@ -47,7 +51,12 @@ jobs:
           java-version: ${{ matrix.java }}
           cache: maven
       - name: Build, test, SpotBugs
-        run: mvn -B -ntp -Djenkins.baseline="$JENKINS_LINE" -Djenkins.version="$JENKINS_VERSION" -Dbom.version="$BOM_VERSION" verify
+        run: |
+          versions=()
+          if [ -n "$BOM_VERSION" ]; then
+            versions=(-Djenkins.baseline="$JENKINS_LINE" -Djenkins.version="$JENKINS_VERSION" -Dbom.version="$BOM_VERSION")
+          fi
+          mvn -B -ntp "${versions[@]}" verify
 
   runtimes:
     name: runtime bundles, checker and examples
@@ -66,7 +75,9 @@ jobs:
       - run: pnpm --dir js install --frozen-lockfile
       - run: pnpm --dir js vendor:check
       - run: pnpm --dir js test
-      - run: pnpm --dir js check ../examples/*.Jenkinsfile
+      # The shell expands the glob here in projects/jenkins-ui; the checker
+      # resolves the paths against INIT_CWD, the directory pnpm ran from.
+      - run: pnpm --dir js check examples/*.Jenkinsfile
 
   e2e:
     name: browser (Jenkins ${{ matrix.line }}, ${{ matrix.browsers }})
@@ -76,8 +87,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Every engine on the current LTS line; Chromium alone on the minimum line.
-          - { line: "2.541", version: "2.541.1", bom: "7002.v028a_3607ddc8", browsers: "chromium" }
+          # Every engine on the current LTS line; Chromium alone on the minimum
+          # line, which builds on pom.xml's versions as in the plugin job.
+          - { line: "2.541", browsers: "chromium" }
           - { line: "2.580", version: "2.580.1", bom: "7237.v5071b_f4589f1", browsers: "chromium,firefox,webkit" }
     env:
       JENKINS_LINE: ${{ matrix.line }}
@@ -103,7 +115,11 @@ jobs:
       - run: pnpm --dir js exec playwright install --with-deps ${BROWSERS//,/ }
       - name: Start Jenkins with the plugin (development mode enforces CSP)
         run: |
-          mvn -B -ntp -Djenkins.baseline="$JENKINS_LINE" -Djenkins.version="$JENKINS_VERSION" -Dbom.version="$BOM_VERSION" \
+          versions=()
+          if [ -n "$BOM_VERSION" ]; then
+            versions=(-Djenkins.baseline="$JENKINS_LINE" -Djenkins.version="$JENKINS_VERSION" -Dbom.version="$BOM_VERSION")
+          fi
+          mvn -B -ntp "${versions[@]}" \
             hpi:run -Dport=8080 -Dhost=127.0.0.1 -Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true > hpi-run.log 2>&1 &
           for _ in $(seq 1 300); do
             grep -q "Jenkins is fully up" hpi-run.log && exit 0

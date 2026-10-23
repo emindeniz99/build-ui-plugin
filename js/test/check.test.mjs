@@ -4,10 +4,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { checkSource } from '../scripts/check.mjs';
 
 const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
 const errors = (problems) => problems.filter((p) => p.level === 'error');
+const script = fileURLToPath(new URL('../scripts/check.mjs', import.meta.url));
+const jsDir = fileURLToPath(new URL('..', import.meta.url));
+const projectDir = fileURLToPath(new URL('../..', import.meta.url));
+// Runs the CLI the way `pnpm --dir js check ...` does: cwd is js/, the caller's directory is in INIT_CWD.
+const cli = (args, initCwd) => spawnSync(process.execPath, [script, ...args], {
+  cwd: jsDir, encoding: 'utf8', env: { ...process.env, INIT_CWD: initCwd },
+});
 
 test('every example Jenkinsfile and the README example are clean', async () => {
   for (const f of ['reference', 'parallel-envs', 'release']) {
@@ -104,4 +113,103 @@ test('comments and strings that merely mention uiParameter are ignored', async (
     echo 'call uiParameter(name: here)'
     uiParameter(name: 'C', module: 'export default () => {}')`);
   assert.deepEqual(p, []);
+});
+
+test('the CLI reads paths relative to the directory pnpm was run from, not js/', () => {
+  // The README and CI both run `pnpm --dir <js> check <path>` with a path relative to the caller.
+  const r = cli(['examples/reference.Jenkinsfile', 'examples/release.Jenkinsfile'], projectDir);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /^2 file\(s\) checked, no errors$/m);
+});
+
+test('a file the CLI cannot read is one error line, not a stack trace', () => {
+  const r = cli(['examples/missing.Jenkinsfile'], projectDir);
+  assert.equal(r.status, 1);
+  assert.deepEqual(r.stderr.trim().split('\n'), ['examples/missing.Jenkinsfile: cannot read: ENOENT']);
+});
+
+test('command-style uiPanel keeps reading arguments after a computed value', async () => {
+  // Panel data is usually computed, so the module after it must still be checked.
+  const p = errors(await checkSource(`
+    uiPanel title: 'S', data: JsonOutput.toJson([a: 1]), module: 'export default () => { nope('
+    uiPanel title: 'a' + b, module: 'nope('
+    uiPanel title: 'M',
+      data: readFile('d.json'),
+      module: 'nope('
+    uiPanel title: 'E', module: 'export default () => {}', data: x
+    otherStep module: 'nope('`));
+  assert.deepEqual(p.map((x) => x.message.split(':')[0]), ["uiPanel 'S'", 'uiPanel', "uiPanel 'M'"]);
+  assert.ok(p.every((x) => /: module: /.test(x.message)), JSON.stringify(p));
+});
+
+test('a backslash escape Groovy rejects is an error at its Jenkinsfile line', async () => {
+  // Groovy refuses to compile '\\d' in a string; the checker must not report the file clean.
+  const p = errors(await checkSource([
+    "uiParameter(name: 'C', module: '''",
+    "export default () => /\\d+/.test('1')",
+    "''', css: 'a\\$b')",
+  ].join('\n')));
+  assert.deepEqual(p.map((x) => [x.line, x.message]), [[2, '\\d is not a Groovy escape; write \\\\d']]);
+});
+
+test('\\uXXXX and octal escapes are decoded the way Groovy decodes them', async () => {
+  // '\\u003cscript>' is a <script> tag once Groovy has read the string.
+  const p = errors(await checkSource(
+    "uiParameter(name: 'C', module: 'export default () => {}', html: '\\u003cscript\\076x()</script>')"));
+  assert.equal(p.length, 1);
+  assert.match(p[0].message, /<script>/);
+});
+
+test('a slashy or dollar-slashy regex does not hide the calls after it', async () => {
+  // /\/*$/ strips trailing slashes; its "/*" is not a comment and must not swallow the file.
+  const p = errors(await checkSource(`
+    def s = 'x/'.replaceAll(/\\/*$/, '')
+    def t = $/a/*b/$
+    def n = 4 / 2 / 1
+    uiParameter(name: 'C', module: 'nope(')`));
+  assert.equal(p.length, 1);
+  assert.match(p[0].message, /^uiParameter 'C': module: /);
+});
+
+test('the CLI fails a file in which it found nothing to check', () => {
+  // A file with no calls usually means the scan went wrong; "no errors" would be a false pass.
+  const r = cli(['js/package.json'], projectDir);
+  assert.equal(r.status, 1, r.stdout);
+  assert.doesNotMatch(r.stdout, /no errors/);
+  assert.match(r.stdout, /js\/package\.json:1:1: warning: no uiParameter or uiPanel call found/);
+});
+
+test('schema shapes the controller rejects when the job is configured are errors here too', async () => {
+  const p = await checkSource(`uiParameter(name: 'C', runtime: 'schema-form', schema: '''{
+    "type": "object", "required": "a", "maxProperties": "2",
+    "properties": {
+      "a": {"enum": []},
+      "b": {"type": "string", "pattern": "("},
+      "c": {"type": "array", "uniqueItems": "yes", "items": {"properties": []}}
+    }}''')`);
+  assert.deepEqual(errors(p).map((x) => x.message.replace(/^uiParameter 'C': /, '')), [
+    'schema: required must be an array of names',
+    'schema: maxProperties must be a number',
+    'schema at /properties/a: enum must be a non-empty array',
+    'schema at /properties/c: uniqueItems must be a boolean',
+    'schema at /properties/c/items: properties must be an object',
+  ]);
+  // Java and JavaScript regex syntax differ, so a pattern JavaScript cannot compile is only a warning.
+  assert.deepEqual(p.filter((x) => x.level === 'warning').map((x) => x.message.split(';')[0]),
+    ["uiParameter 'C': schema at /properties/b: pattern does not compile as a JavaScript regular expression"]);
+});
+
+test('JSON the controller refuses is an error: duplicate keys, nesting and size limits', async () => {
+  const deep = '['.repeat(33) + ']'.repeat(33);
+  const wide = JSON.stringify(Array.from({ length: 1001 }, () => 0));
+  const p = errors(await checkSource(`
+    uiParameter(name: 'C', module: 'export default () => {}', defaultJson: '{"a": 1, "b": {"a": 2}, "a": 3}')
+    uiPanel(title: 'D', data: '${deep}', module: 'export default () => {}')
+    uiPanel(title: 'W', data: '${wide}', module: 'export default () => {}')
+    uiPanel(title: 'OK', data: '${'['.repeat(32) + ']'.repeat(32)}', module: 'export default () => {}')`));
+  assert.deepEqual(p.map((x) => x.message), [
+    "uiParameter 'C': defaultJson has the key \"a\" twice in one object",
+    "uiPanel 'D': data is nested deeper than 32 levels",
+    "uiPanel 'W': data has an array with 1001 items; the limit is 1000",
+  ]);
 });

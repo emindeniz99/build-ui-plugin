@@ -265,16 +265,23 @@ made in code. An invalid value gets HTTP 400 with the reason, or fails the
 ### Check a Jenkinsfile before you push it
 
 ```bash
+pnpm --dir projects/jenkins-ui/js install   # once; the checker needs esbuild
 pnpm --dir projects/jenkins-ui/js check path/to/Jenkinsfile
 ```
+
+Paths are relative to the directory you run the command from.
 
 The checker finds every `uiParameter` and `uiPanel` call and reports, with
 Jenkinsfile line numbers: module syntax errors, `import` statements, a missing
 `export default`, `<script>` and inline handlers in `html`, schema keywords
-the controller rejects, invalid JSON in `schema`, `defaultJson` and `data`,
-and unknown runtimes. It reads string literals only; a field built from
+and keyword values the controller rejects, invalid JSON in `schema`,
+`defaultJson` and `data` (duplicate keys and the limits above included),
+Groovy escapes such as `\d` that Jenkins cannot compile, and unknown
+runtimes. A `pattern` that JavaScript cannot compile gets a warning, since
+the controller compiles it as Java. It reads string literals only; a field built from
 variables or a `"${…}"` GString gets a warning. It does not check `defaultJson`
-against the schema; the controller does that when a build uses the default.
+against the schema; the controller does that when a build uses the default. A
+file with no `uiParameter` or `uiPanel` call fails the check.
 
 ### CSP and styling
 

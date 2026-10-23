@@ -41,7 +41,11 @@ jobs:
         run: |
           mvn -B -ntp versions:set -DnewVersion="$VERSION" -DgenerateBackupPoms=false
           mvn -B -ntp verify
-          sha256sum target/build-ui.hpi | tee target/build-ui.hpi.sha256
+      # Run in target/ so the file names build-ui.hpi as it is downloaded,
+      # and `sha256sum -c build-ui.hpi.sha256` works next to the asset.
+      - name: Write the checksum
+        working-directory: projects/jenkins-ui/target
+        run: sha256sum build-ui.hpi | tee build-ui.hpi.sha256
       - name: Create the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
