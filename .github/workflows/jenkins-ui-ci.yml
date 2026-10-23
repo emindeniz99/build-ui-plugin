@@ -50,7 +50,7 @@ jobs:
         run: mvn -B -ntp -Djenkins.baseline="$JENKINS_LINE" -Djenkins.version="$JENKINS_VERSION" -Dbom.version="$BOM_VERSION" verify
 
   runtimes:
-    name: runtime bundles are up to date
+    name: runtime bundles, checker and examples
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -65,6 +65,8 @@ jobs:
           node-version: "24.22.1"
       - run: pnpm --dir js install --frozen-lockfile
       - run: pnpm --dir js vendor:check
+      - run: pnpm --dir js test
+      - run: pnpm --dir js check ../examples/reference.Jenkinsfile
 
   e2e:
     name: browser (Jenkins ${{ matrix.line }})
