@@ -4,8 +4,10 @@ import hudson.Extension;
 import java.util.ArrayList;
 import java.util.List;
 import jenkins.model.GlobalConfiguration;
+import net.sf.json.JSONObject;
 import org.jenkinsci.Symbol;
 import org.kohsuke.stapler.DataBoundSetter;
+import org.kohsuke.stapler.StaplerRequest2;
 
 /** Settings under Manage Jenkins » System » Build UI. */
 @Extension
@@ -25,6 +27,15 @@ public class BuildUiConfiguration extends GlobalConfiguration {
 
     public List<ArgoCdServer> getArgoCdServers() {
         return argoCdServers;
+    }
+
+    /** Stapler calls setters only for keys the form sends, and a form with no servers sends none. */
+    @Override
+    public boolean configure(StaplerRequest2 req, JSONObject json) throws FormException {
+        argoCdServers = new ArrayList<>();
+        req.bindJSON(this, json);
+        save();
+        return true;
     }
 
     @DataBoundSetter

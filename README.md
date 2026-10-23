@@ -165,7 +165,8 @@ servers under *Manage Jenkins* » *System* » *Build UI*: a name, the URL, a
 *Secret text* credential holding an ArgoCD API token, and a glob of the
 application names forms may read (`*` by default). The browser only names an
 application, so Jenkins contacts only configured servers, and the token never
-leaves the controller. Answers are cached for 10 seconds. With the
+leaves the controller. Answers are cached for 10 seconds, and a server that
+takes longer than 15 seconds to answer fails the query. With the
 Configuration as Code plugin the same settings live under `unclassified.buildUi`.
 
 ```yaml
