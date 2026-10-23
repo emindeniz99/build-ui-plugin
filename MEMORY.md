@@ -5,8 +5,8 @@ significant work; prune past ~100 lines. Details: `.claude/skills/memory/SKILL.m
 
 ## Now
 
-Feature-complete for 0.1.0 and tested on 2.541.1 and 2.580.1 (36 JenkinsRule,
-14 plain unit, 18 browser, 11 checker tests; Maven counts 59 Java tests: our 50
+Feature-complete for 0.1.0 and tested on 2.541.1 and 2.580.1 (47 JenkinsRule,
+18 plain unit, 26 browser, 20 checker tests; Maven counts 74 Java tests: our 65
 plus 9 from the plugin parent, 1 skipped): parameter, `input` step, `uiPanel`,
 `schema-form`, `jenkinsRuns`, `gitRefs`, `argoCdApp`, optional approval, the Jenkinsfile
 checker, accessibility checks. Release workflow ready; no tag pushed (owner
