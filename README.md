@@ -129,6 +129,20 @@ a job is configured for, and the job's credentials stay on the controller. It
 needs Build permission on the job, works once the job has checked out at least
 once, caches each answer for 30 seconds, and needs the Git plugin.
 
+| Argument | Default | Meaning |
+|---|---|---|
+| `job` | required | Full name of the job, usually `ui.job` |
+| `branches`, `tags` | `*` | Glob filters (`*` any run, `?` one character), for example `release/*` or `v1.*` |
+| `sort` | `name` | `name`, or `version-desc` for newest version first: `v1.10.0` before `v1.9.0`, and `1.0.0` before `1.0.0-rc1` |
+| `limit` | `200` | Entries per list, at most 1000 |
+
+To make the controller reject a ref that does not exist, mark the property in
+the schema: `{ "type": "string", "x-git-ref": "tag" }` (or `"branch"`, `"any"`,
+`true`). The form and `buildWithParameters` answer 400 with the reason; a
+downstream `build` step or a script gets its build refused by the queue. A job
+that has not checked out yet has no refs to compare with, so the check waits
+for its first checkout; `defaultJson` is checked when a build uses it.
+
 Other plugins can add providers by extending `io.jenkins.plugins.buildui.DataProvider`.
 
 ### Panels on the build page

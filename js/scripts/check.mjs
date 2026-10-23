@@ -110,6 +110,9 @@ function checkSchema(schema, at, report) {
     return;
   }
   for (const [key, value] of Object.entries(schema)) {
+    if (key === 'x-git-ref' && value !== true && !['branch', 'tag', 'any'].includes(value)) {
+      report('error', `schema${at ? ' at ' + at : ''}: x-git-ref must be true, "branch", "tag" or "any"`);
+    }
     if (contract.schemaAnnotations.includes(key) || key.startsWith('x-')) continue;
     if (!contract.schemaValidations.includes(key)) {
       report('error', `schema${at ? ' at ' + at : ''}: keyword '${key}' is not supported; supported: ${contract.schemaValidations.join(', ')}`);

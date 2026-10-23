@@ -27,6 +27,7 @@ public final class Schema {
     private static final Set<String> ANNOTATIONS = Contract.SCHEMA_ANNOTATIONS;
     private static final Set<String> VALIDATIONS = Contract.SCHEMA_VALIDATIONS;
     private static final Set<String> TYPES = Contract.SCHEMA_TYPES;
+    private static final Set<String> GIT_REF_KINDS = Set.of("branch", "tag", "any");
 
     private final JsonNode root;
 
@@ -62,6 +63,9 @@ public final class Schema {
             Map.Entry<String, JsonNode> e = it.next();
             String k = e.getKey();
             JsonNode v = e.getValue();
+            if (k.equals("x-git-ref") && !(v.isBoolean() && v.asBoolean() || v.isTextual() && GIT_REF_KINDS.contains(v.asText()))) {
+                throw bad(at, "x-git-ref must be true, \"branch\", \"tag\" or \"any\"");
+            }
             if (ANNOTATIONS.contains(k) || k.startsWith("x-")) {
                 continue;
             }

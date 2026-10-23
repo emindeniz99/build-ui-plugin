@@ -42,7 +42,7 @@ public class QueueGuard extends Queue.QueueDecisionHandler {
                     continue;
                 }
                 List<String> errors = value instanceof StringParameterValue s && s.getValue() != null
-                        ? ui.errorsFor(s.getValue())
+                        ? ui.errorsFor(s.getValue(), job)
                         : List.of("value is not a JSON string but " + value.getClass().getSimpleName());
                 if (!errors.isEmpty()) {
                     LOGGER.warning(() -> "Not scheduling " + job.getFullName() + ": parameter " + value.getName() + ": " + String.join("; ", errors));

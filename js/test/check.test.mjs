@@ -59,6 +59,14 @@ test('schema keywords come from the same contract the controller enforces', asyn
   ]);
 });
 
+test('an x-git-ref kind the controller does not know is an error', async () => {
+  const p = errors(await checkSource(`uiParameter(name: 'C', module: 'export default () => {}',
+    schema: '{"type":"object","properties":{"a":{"type":"string","x-git-ref":"tag"},"b":{"type":"string","x-git-ref":"tga"}}}')`));
+  assert.deepEqual(p.map((x) => x.message), [
+    "uiParameter 'C': schema at /properties/b: x-git-ref must be true, \"branch\", \"tag\" or \"any\"",
+  ]);
+});
+
 test('bad JSON in defaultJson and uiPanel data is reported with the field name', async () => {
   const p = errors(await checkSource(`
     uiParameter(name: 'C', module: 'export default () => {}', defaultJson: '{branch: main}')
