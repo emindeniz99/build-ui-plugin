@@ -141,8 +141,18 @@ which the author controls anyway, so they would be validated but not approved.
 
 ## 6. Measurements
 
-Strict CSP (`script-src 'self' 'sha256-<import map>'`, no `unsafe-eval`). This
-is our own policy, not Jenkins's real one; Phase 0 step 1 replaces it.
+Jenkins 2.541.1 in development mode (`mvn hpi:run`) enforces this policy on
+its pages (Measured, 2026-10-23):
+
+```
+base-uri 'none'; default-src 'self'; form-action 'self'; frame-ancestors 'self';
+img-src 'self' data:; script-src 'report-sample' 'self' usage.jenkins.io;
+style-src 'report-sample' 'self' 'unsafe-inline'; report-to …; report-uri …
+```
+
+The lab replays it with `LAB_CSP` and adds the hash of its own import map to
+`script-src`. The table below holds under both this policy and the lab's
+stricter one (`style-src 'self'`).
 
 | Result | Libraries |
 |---|---|
@@ -156,9 +166,14 @@ Other measured behaviour:
 
 - Enforced CSP makes `new Function()` throw. Report-only mode lets it run and
   sends one violation report per page load.
-- Under enforcement, a script-created `<style>`, `setAttribute('style', …)` and
-  inline `onclick` are blocked; `<link rel=stylesheet>`, `adoptedStyleSheets`
-  and CSSOM property writes work.
+- Under Jenkins's policy, a script-created `<style>` and `setAttribute('style', …)`
+  work, because `style-src` allows `'unsafe-inline'`; inline `onclick` stays
+  blocked. Under the lab's stricter `style-src 'self'` both style paths are
+  blocked too. `<link rel=stylesheet>`, `adoptedStyleSheets` and CSSOM property
+  writes work under both, so the plugin uses those and does not depend on
+  `'unsafe-inline'`.
+- Jenkins's policy has no `connect-src`, so `default-src 'self'` applies to
+  `fetch`.
 - Same-origin dynamic `import()` works; `blob:` and `data:` imports are
   blocked. A module served with the wrong MIME type fails to load.
 - Preact writes an array as an attribute (`"api,worker"`) when it renders
@@ -187,8 +202,6 @@ small test elements of our own, not a component library.
 
 ## 8. Assumptions
 
-- Jenkins's real default CSP header behaves like the lab policy for module
-  scripts, stylesheets and `connect-src`.
 - The *Build with Parameters* page on 2.541 and 2.580 renders a plugin's
   parameter view the same way.
 - A queue-level check sees every parameter value before a build starts.
