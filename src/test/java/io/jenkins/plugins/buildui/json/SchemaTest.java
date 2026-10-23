@@ -78,6 +78,35 @@ class SchemaTest {
     }
 
     @Test
+    void thePatternBudgetCoversTheWholeDocumentSoManyStringsCannotMultiplyIt() {
+        // One request carries both schema and value, so a per-string budget let 100 strings cost 100 x 50 ms.
+        String csv = "\"" + "a,".repeat(30) + "\"";
+        String value = "[" + String.join(",", java.util.Collections.nCopies(100, csv)) + "]";
+        long start = System.nanoTime();
+        List<String> e = errors("{\"type\":\"array\",\"items\":{\"type\":\"string\",\"pattern\":\"^(.*?,){14}P\"}}", value);
+        long millis = (System.nanoTime() - start) / 1_000_000;
+        assertEquals(1, e.size(), e::toString);
+        assertTrue(e.get(0).endsWith("took too long to evaluate"), e::toString);
+        assertTrue(millis < 1000, "took " + millis + " ms");
+    }
+
+    @Test
+    void aNumberPastTheDoubleRangeIsValidatedInsteadOfCrashing() {
+        // 1e400 used to become Infinity, and decimalValue() threw: a 500 for the user, an exception in the queue.
+        assertEquals(List.of("/: must be <= 5"), errors("{\"type\":\"number\",\"maximum\":5}", "1e400"));
+        assertEquals(List.of(), errors("{\"type\":\"integer\",\"minimum\":5}", "1e400"));
+    }
+
+    @Test
+    void comparesNumbersByValueInEnumConstAndUniqueItemsLikeJsonSchema() {
+        // A script that writes 5.0 means the same number as a schema that says 5.
+        assertEquals(List.of(), errors("{\"enum\":[5,\"x\"]}", "5.0"));
+        assertEquals(List.of(), errors("{\"const\":{\"n\":[1]}}", "{\"n\":[1.0]}"));
+        assertEquals(List.of("/: has duplicate item 1.0"), errors("{\"type\":\"array\",\"uniqueItems\":true}", "[1,1.0]"));
+        assertEquals(1, errors("{\"enum\":[5]}", "5.5").size());
+    }
+
+    @Test
     void rejectsAPatternThatDoesNotCompileWhenTheJobIsConfigured() {
         assertThrows(IllegalArgumentException.class, () -> Schema.compile(Json.parse("{\"pattern\":\"(\"}", "schema")));
     }

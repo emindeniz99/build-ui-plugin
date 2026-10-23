@@ -38,4 +38,11 @@ class JsonTest {
     void writesCompactJsonForTheBuild() {
         assertEquals("{\"a\":[1,2]}", Json.write(Json.parse("{ \"a\" : [ 1, 2 ] }", "value")));
     }
+
+    @Test
+    void keepsNumbersExactSoTheBuildGetsTheNumberThatWasSent() {
+        // As a double, 1e400 was written back as the string "Infinity".
+        assertEquals("{\"n\":1E+400}", Json.write(Json.parse("{\"n\":1e400}", "value")));
+        assertEquals("[1.0,0.1,10.50]", Json.write(Json.parse("[1.0,0.1,10.50]", "value")));
+    }
 }

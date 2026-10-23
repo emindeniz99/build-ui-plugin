@@ -1,9 +1,14 @@
 package io.jenkins.plugins.buildui.json;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.DecimalNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -15,7 +20,8 @@ import io.jenkins.plugins.buildui.Contract;
 /**
  * A deliberately small JSON Schema (draft 2020-12) subset that runs on the
  * controller. There is no {@code $ref} or any other keyword that loads a
- * document, and {@code pattern} runs with a time budget. An unsupported
+ * document, and all {@code pattern} checks of one document share one time
+ * budget, so a value with many strings cannot multiply it. An unsupported
  * keyword fails when the schema is configured, so an author never believes a
  * rule is enforced when it is not.
  */
@@ -30,15 +36,19 @@ public final class Schema {
     private static final Set<String> GIT_REF_KINDS = Set.of("branch", "tag", "any");
 
     private final JsonNode root;
+    /** Compiled once per schema node, so a document with many strings does not recompile its pattern for each. */
+    private final Map<JsonNode, Pattern> patterns;
 
-    private Schema(JsonNode root) {
+    private Schema(JsonNode root, Map<JsonNode, Pattern> patterns) {
         this.root = root;
+        this.patterns = patterns;
     }
 
     /** Compiles a schema or throws {@link IllegalArgumentException} naming the first problem. */
     public static Schema compile(JsonNode schema) {
-        check(schema, "");
-        return new Schema(schema);
+        Map<JsonNode, Pattern> patterns = new IdentityHashMap<>();
+        check(schema, "", patterns);
+        return new Schema(schema, patterns);
     }
 
     public JsonNode node() {
@@ -48,11 +58,23 @@ public final class Schema {
     /** Returns one message per violation, each prefixed with a JSON Pointer to the value. */
     public List<String> validate(JsonNode value) {
         List<String> errors = new ArrayList<>();
-        validate(root, value, "", errors);
+        validate(root, value, "", errors, new Budget(patterns, System.nanoTime() + PATTERN_BUDGET_NANOS));
         return errors;
     }
 
-    private static void check(JsonNode s, String at) {
+    /** The pattern time left for one document. */
+    private static final class Budget {
+        final Map<JsonNode, Pattern> patterns;
+        final long deadline;
+        boolean spent;
+
+        Budget(Map<JsonNode, Pattern> patterns, long deadline) {
+            this.patterns = patterns;
+            this.deadline = deadline;
+        }
+    }
+
+    private static void check(JsonNode s, String at, Map<JsonNode, Pattern> patterns) {
         if (s.isBoolean()) {
             return;
         }
@@ -93,14 +115,14 @@ public final class Schema {
                 }
                 case "properties" -> {
                     if (!v.isObject()) throw bad(at, "properties must be an object");
-                    v.fields().forEachRemaining(p -> check(p.getValue(), at + "/properties/" + p.getKey()));
+                    v.fields().forEachRemaining(p -> check(p.getValue(), at + "/properties/" + p.getKey(), patterns));
                 }
-                case "additionalProperties", "items" -> check(v, at + "/" + k);
+                case "additionalProperties", "items" -> check(v, at + "/" + k, patterns);
                 case "pattern" -> {
                     if (!v.isTextual()) throw bad(at, "pattern must be a string");
                     if (v.asText().length() > MAX_PATTERN_LENGTH) throw bad(at, "pattern is longer than " + MAX_PATTERN_LENGTH);
                     try {
-                        Pattern.compile(v.asText());
+                        patterns.put(s, Pattern.compile(v.asText()));
                     } catch (PatternSyntaxException ex) {
                         throw bad(at, "pattern does not compile: " + ex.getDescription());
                     }
@@ -120,7 +142,7 @@ public final class Schema {
         return new IllegalArgumentException("schema" + (at.isEmpty() ? "" : " at " + at) + ": " + message);
     }
 
-    private static void validate(JsonNode s, JsonNode v, String at, List<String> errors) {
+    private static void validate(JsonNode s, JsonNode v, String at, List<String> errors, Budget budget) {
         if (s.isBoolean()) {
             if (!s.asBoolean()) errors.add(where(at) + "no value is allowed here");
             return;
@@ -135,16 +157,16 @@ public final class Schema {
             errors.add(where(at) + "must be one of " + en);
         }
         JsonNode cn = s.get("const");
-        if (cn != null && !cn.equals(v)) {
+        if (cn != null && !canonical(cn).equals(canonical(v))) {
             errors.add(where(at) + "must be " + cn);
         }
-        if (v.isTextual()) validateString(s, v.asText(), at, errors);
+        if (v.isTextual()) validateString(s, v.asText(), at, errors, budget);
         if (v.isNumber()) validateNumber(s, v.decimalValue(), at, errors);
-        if (v.isArray()) validateArray(s, v, at, errors);
-        if (v.isObject()) validateObject(s, v, at, errors);
+        if (v.isArray()) validateArray(s, v, at, errors, budget);
+        if (v.isObject()) validateObject(s, v, at, errors, budget);
     }
 
-    private static void validateString(JsonNode s, String text, String at, List<String> errors) {
+    private static void validateString(JsonNode s, String text, String at, List<String> errors, Budget budget) {
         int length = text.codePointCount(0, text.length());
         if (s.has("minLength") && length < s.get("minLength").asInt()) {
             errors.add(where(at) + "must have at least " + s.get("minLength").asInt() + " characters");
@@ -152,13 +174,15 @@ public final class Schema {
         if (s.has("maxLength") && length > s.get("maxLength").asInt()) {
             errors.add(where(at) + "must have at most " + s.get("maxLength").asInt() + " characters");
         }
-        if (s.has("pattern")) {
-            String pattern = s.get("pattern").asText();
+        // Once the budget is spent the document already has an error, so later patterns are skipped.
+        if (s.has("pattern") && !budget.spent) {
+            Pattern pattern = budget.patterns.get(s);
             try {
-                if (!Pattern.compile(pattern).matcher(new Budgeted(text)).find()) {
+                if (!pattern.matcher(new Budgeted(text, budget.deadline)).find()) {
                     errors.add(where(at) + "must match " + pattern);
                 }
             } catch (Budgeted.Exhausted e) {
+                budget.spent = true;
                 errors.add(where(at) + "pattern " + pattern + " took too long to evaluate");
             }
         }
@@ -179,7 +203,7 @@ public final class Schema {
         }
     }
 
-    private static void validateArray(JsonNode s, JsonNode v, String at, List<String> errors) {
+    private static void validateArray(JsonNode s, JsonNode v, String at, List<String> errors, Budget budget) {
         if (s.has("minItems") && v.size() < s.get("minItems").asInt()) {
             errors.add(where(at) + "must have at least " + s.get("minItems").asInt() + " items");
         }
@@ -189,7 +213,7 @@ public final class Schema {
         if (s.path("uniqueItems").asBoolean(false)) {
             Set<JsonNode> seen = new HashSet<>();
             for (JsonNode item : v) {
-                if (!seen.add(item)) {
+                if (!seen.add(canonical(item))) {
                     errors.add(where(at) + "has duplicate item " + item);
                     break;
                 }
@@ -197,12 +221,12 @@ public final class Schema {
         }
         if (s.has("items")) {
             for (int i = 0; i < v.size(); i++) {
-                validate(s.get("items"), v.get(i), at + "/" + i, errors);
+                validate(s.get("items"), v.get(i), at + "/" + i, errors, budget);
             }
         }
     }
 
-    private static void validateObject(JsonNode s, JsonNode v, String at, List<String> errors) {
+    private static void validateObject(JsonNode s, JsonNode v, String at, List<String> errors, Budget budget) {
         if (s.has("minProperties") && v.size() < s.get("minProperties").asInt()) {
             errors.add(where(at) + "must have at least " + s.get("minProperties").asInt() + " properties");
         }
@@ -222,9 +246,9 @@ public final class Schema {
             Map.Entry<String, JsonNode> e = it.next();
             String child = at + "/" + e.getKey().replace("~", "~0").replace("/", "~1");
             if (props.has(e.getKey())) {
-                validate(props.get(e.getKey()), e.getValue(), child, errors);
+                validate(props.get(e.getKey()), e.getValue(), child, errors, budget);
             } else if (extra != null) {
-                validate(extra, e.getValue(), child, errors);
+                validate(extra, e.getValue(), child, errors, budget);
             }
         }
     }
@@ -249,10 +273,32 @@ public final class Schema {
     }
 
     private static boolean contains(JsonNode array, JsonNode v) {
+        JsonNode value = canonical(v);
         for (JsonNode candidate : array) {
-            if (candidate.equals(v)) return true;
+            if (canonical(candidate).equals(value)) return true;
         }
         return false;
+    }
+
+    /**
+     * A copy in which equal numbers are equal nodes ({@code 5.0} and {@code 5}),
+     * as JSON Schema compares them; Jackson's own equality tells them apart.
+     */
+    private static JsonNode canonical(JsonNode v) {
+        if (v.isNumber()) {
+            return DecimalNode.valueOf(v.decimalValue().stripTrailingZeros());
+        }
+        if (v.isArray()) {
+            ArrayNode copy = JsonNodeFactory.instance.arrayNode(v.size());
+            v.forEach(item -> copy.add(canonical(item)));
+            return copy;
+        }
+        if (v.isObject()) {
+            ObjectNode copy = JsonNodeFactory.instance.objectNode();
+            v.fields().forEachRemaining(e -> copy.set(e.getKey(), canonical(e.getValue())));
+            return copy;
+        }
+        return v;
     }
 
     private static String typeOf(JsonNode v) {
@@ -279,11 +325,7 @@ public final class Schema {
         private final CharSequence inner;
         private final long deadline;
 
-        Budgeted(CharSequence inner) {
-            this(inner, System.nanoTime() + PATTERN_BUDGET_NANOS);
-        }
-
-        private Budgeted(CharSequence inner, long deadline) {
+        Budgeted(CharSequence inner, long deadline) {
             this.inner = inner;
             this.deadline = deadline;
         }

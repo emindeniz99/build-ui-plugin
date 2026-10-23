@@ -163,9 +163,12 @@ validates them and nobody approves them. Choices and the facts behind them:
   `build` step fails with it, and `QueueGuard` (a `QueueDecisionHandler`)
   refuses to queue a hand-built invalid `ParametersAction`.
 - Limits: 256 KiB per document, nesting depth 32, 1000 array items, 1000
-  object properties, no duplicate keys, patterns up to 256 characters with a
-  50 ms budget per value. No `$ref`; any keyword outside the subset fails when
-  the job is configured.
+  object properties, no duplicate keys, patterns up to 256 characters. All
+  patterns of one document share a 50 ms budget: a per-string budget let a
+  value of thousands of strings cost minutes of controller CPU. Numbers parse
+  as exact decimals (a double turned `1e400` into Infinity), and `enum`,
+  `const` and `uniqueItems` compare them by value. No `$ref`; any keyword
+  outside the subset fails when the job is configured.
 - `schema` and `defaultJson` must parse when the job is configured. The
   default is checked against the schema when a build uses it, and by the form
   check on the freestyle configuration page; an invalid default fails that

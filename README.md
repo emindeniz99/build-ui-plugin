@@ -242,7 +242,10 @@ made in code. An invalid value gets HTTP 400 with the reason, or fails the
   `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, plus
   annotations and `x-` extensions. Any other keyword, `$ref` included, fails
   when the job is configured.
-- `pattern` is a Java regular expression with a 50 ms budget per value.
+- `pattern` is a Java regular expression. All patterns in one document
+  share a 50 ms budget; past it the value is rejected.
+- `enum`, `const` and `uniqueItems` compare numbers by value, so `5.0`
+  equals `5`.
 - Values over 32 KiB stay in `params` but do not become an environment
   variable of build processes.
 - Send large values to `buildWithParameters` in the POST body: a 32 KiB value
