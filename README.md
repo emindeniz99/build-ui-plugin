@@ -120,6 +120,14 @@ still start. If your module renders custom elements, wait for them with
 `ui.query('jenkinsRuns', { job: 'folder/name', limit: 20 })` returns the
 latest builds of a job the user can read: number, display name, description,
 result, building, timestamp, duration and URL. Build parameters are left out.
+
+`ui.query('gitRefs', { job: ui.job })` returns `{ branches: [...], tags: [...] }`,
+each entry `{ name, sha, repository }`, for the Git repositories that job
+already uses. The browser never sends a URL, so Jenkins only contacts servers
+a job is configured for, and the job's credentials stay on the controller. It
+needs Build permission on the job, works once the job has checked out at least
+once, caches each answer for 30 seconds, and needs the Git plugin.
+
 Other plugins can add providers by extending `io.jenkins.plugins.buildui.DataProvider`.
 
 ### Panels on the build page
