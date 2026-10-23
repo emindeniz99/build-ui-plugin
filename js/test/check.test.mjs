@@ -9,8 +9,10 @@ import { checkSource } from '../scripts/check.mjs';
 const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
 const errors = (problems) => problems.filter((p) => p.level === 'error');
 
-test('the reference Jenkinsfile and the README example are clean', async () => {
-  assert.deepEqual(await checkSource(read('../../examples/reference.Jenkinsfile')), []);
+test('every example Jenkinsfile and the README example are clean', async () => {
+  for (const f of ['reference', 'parallel-envs', 'release']) {
+    assert.deepEqual(await checkSource(read(`../../examples/${f}.Jenkinsfile`)), [], f);
+  }
   const readme = read('../../README.md');
   for (const [, block] of readme.matchAll(/```groovy\n([\s\S]*?)```/g)) {
     assert.deepEqual(errors(await checkSource(block)), [], block.slice(0, 80));

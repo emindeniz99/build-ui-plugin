@@ -19,6 +19,27 @@ export async function pipelineJob(request, name, script) {
   expect(res.ok(), `createItem ${name}: ${res.status()} ${await res.text()}`).toBeTruthy();
 }
 
+/** Creates (or replaces) a Pipeline job that loads `Jenkinsfile` from the Git repository at `url`. */
+export async function scmPipelineJob(request, name, url) {
+  const xml = `<flow-definition plugin="workflow-job"><definition class="org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition" plugin="workflow-cps">
+    <scm class="hudson.plugins.git.GitSCM" plugin="git"><configVersion>2</configVersion>
+      <userRemoteConfigs><hudson.plugins.git.UserRemoteConfig><url>${escapeXml(url)}</url></hudson.plugins.git.UserRemoteConfig></userRemoteConfigs>
+      <branches><hudson.plugins.git.BranchSpec><name>*/main</name></hudson.plugins.git.BranchSpec></branches>
+      <extensions/></scm>
+    <scriptPath>Jenkinsfile</scriptPath><lightweight>false</lightweight></definition></flow-definition>`;
+  const headers = { 'Content-Type': 'application/xml', ...(await crumb(request)) };
+  await request.post(`job/${name}/doDelete`, { headers, maxRedirects: 0 });
+  const res = await request.post(`createItem?name=${encodeURIComponent(name)}`, { headers, data: xml });
+  expect(res.ok(), `createItem ${name}: ${res.status()} ${await res.text()}`).toBeTruthy();
+}
+
+/** POSTs buildWithParameters with the values in the body; returns the response. */
+export async function buildWithParameters(request, name, values) {
+  return request.post(`job/${name}/buildWithParameters`, {
+    headers: await crumb(request), form: values, maxRedirects: 0,
+  });
+}
+
 /** Starts a build and waits for it to finish (or only to start); returns its number. */
 export async function build(request, name, { finished = true } = {}) {
   const before = await lastNumber(request, name);

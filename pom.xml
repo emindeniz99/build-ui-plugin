@@ -87,6 +87,12 @@
       <artifactId>pipeline-input-step</artifactId>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <!-- readJSON in the examples; hpi:run installs test-scope plugins too. -->
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>pipeline-utility-steps</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <repositories>

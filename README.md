@@ -33,6 +33,16 @@ form is [`examples/reference.Jenkinsfile`](./examples/reference.Jenkinsfile)
 (53 lines). Design, measurements and open questions:
 [`docs/design.md`](./docs/design.md).
 
+## Examples
+
+| File | What it shows |
+|---|---|
+| [`examples/reference.Jenkinsfile`](./examples/reference.Jenkinsfile) | The ease test: conditional field, multi-select, server data and a reusable section in 53 lines |
+| [`examples/parallel-envs.Jenkinsfile`](./examples/parallel-envs.Jenkinsfile) | Deploy to several test environments: cards with each environment's last build (from `jenkinsRuns` history), search, select shown, services, auto-deploy |
+| [`examples/release.Jenkinsfile`](./examples/release.Jenkinsfile) | Cut a release: branch and base tag from `gitRefs` (newest version first), a preview of the next tag, a special-version override, and `x-git-ref` so the controller rejects refs that do not exist |
+
+The browser suite runs all three against a real Jenkins.
+
 ## Use it
 
 ```groovy
@@ -121,6 +131,10 @@ still start. If your module renders custom elements, wait for them with
 `ui.query('jenkinsRuns', { job: 'folder/name', limit: 20 })` returns the
 latest builds of a job the user can read: number, display name, description,
 result, building, timestamp, duration and URL. Build parameters are left out.
+Add `parameter: ui.name` and each run also carries `config`, the JSON that run
+got from this form (or `null`), so a form can show history without parsing
+build descriptions. Only build-ui values come back this way, never passwords
+or other parameter types.
 
 `ui.query('gitRefs', { job: ui.job })` returns `{ branches: [...], tags: [...] }`,
 each entry `{ name, sha, repository }`, for the Git repositories that job
@@ -209,7 +223,8 @@ pnpm 12.14.0 (`js/package.json`).
 
 ```bash
 mvn -f projects/jenkins-ui/pom.xml verify          # build and test on 2.541.1
-mvn -f projects/jenkins-ui/pom.xml hpi:run          # Jenkins at http://localhost:8080/jenkins/
+mvn -f projects/jenkins-ui/pom.xml hpi:run \
+  -Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true   # Jenkins at http://localhost:8080/jenkins/
 pnpm --dir projects/jenkins-ui/js install
 pnpm --dir projects/jenkins-ui/js e2e               # browser tests against hpi:run
 pnpm --dir projects/jenkins-ui/js vendor            # rebuild runtime bundles after editing js/runtimes
