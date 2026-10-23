@@ -63,8 +63,10 @@ Lifecycle rules:
    The host cannot know which elements a module uses.
 3. If the form goes away before `mount` resolves, the host aborts `signal` and
    calls the cleanup function as soon as the promise resolves.
-4. If `mount` throws or rejects, the host shows the error and a JSON textarea
-   with schema errors, so the user can still start a build.
+4. If `mount` throws or rejects, the host shows the error and the JSON
+   textarea, so the user can still start a build. The browser does not check
+   that JSON: the controller checks it against the schema when the build is
+   submitted and answers 400 with the errors.
 5. A runtime ID carries only the major version. A patch update inside
    `preact11-htm3` keeps the ID; a new major gets a new ID, and old
    Jenkinsfiles keep working on the old one.
@@ -364,4 +366,4 @@ LTS line. Every raise goes in `CHANGELOG.md`.
 
 Size budgets (gzip): host 3 KB, `preact11-htm3` 8 KB, `schema-form` 9 KB.
 `pnpm vendor:check` fails past a budget, so growth past it is a decision
-taken in the commit that raises it. Today: 2.3, 6.7 and 7.3 KB.
+taken in the commit that raises it. Today: 2.7, 6.7 and 7.5 KB.

@@ -40,11 +40,15 @@ test.describe('accessibility', () => {
             "replicas": { "type": "integer", "title": "Replicas" },
             "deploy": { "type": "boolean", "title": "Deploy" },
             "env": { "enum": ["dev", "prod"], "title": "Environment", "x-show-if": { "deploy": true } },
-            "services": { "type": "array", "title": "Services", "items": { "enum": ["api", "web"] } } } }''') }
+            "services": { "type": "array", "title": "Services", "items": { "enum": ["api", "web"] } },
+            "frontend": { "type": "object", "title": "Frontend", "properties": { "version": { "type": "string", "title": "Version" } } },
+            "backend": { "type": "object", "title": "Backend", "properties": { "version": { "type": "string", "title": "Version" } } } } }''') }
         stages { stage('s') { steps { echo 'ok' } } } }`);
     await build(request, 'a11y-schema');
     await page.goto('job/a11y-schema/build?delay=0sec');
     await expect(page.getByLabel('Environment')).toBeVisible();
+    // Two nested objects share the key "version": each label must name its own field.
+    await expect(page.getByLabel('Version')).toHaveCount(2);
     expect(await axe(page)).toEqual([]);
   });
 

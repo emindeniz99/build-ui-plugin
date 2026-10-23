@@ -18,6 +18,8 @@ baseSheet.replaceSync(`
 const runtimes = new Map();
 function loadRuntime(id) {
   if (id === 'none') return Promise.resolve({});
+  // Plain names only: a path here would import any same-origin script.
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) return Promise.reject(new Error(`unknown runtime '${id}'`));
   if (!runtimes.has(id)) runtimes.set(id, import(runtimeURL(id)));
   return runtimes.get(id);
 }
@@ -46,8 +48,9 @@ function makeUi(el, textarea, signal) {
     async query(id, args = {}, options = {}) {
       const url = `${contentURL}query/${encodeURIComponent(id)}?args=${encodeURIComponent(JSON.stringify(args))}`;
       const res = await fetch(url, { signal: options.signal || signal, credentials: 'same-origin', headers: { Accept: 'application/json' } });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || `query ${id} failed: HTTP ${res.status}`);
+      // Jenkins answers some errors (403, 500, expired session) with HTML.
+      const body = parseJson(await res.text(), undefined);
+      if (!res.ok || body === undefined) throw new Error(body?.error || `query ${id} failed: HTTP ${res.status}`);
       return body;
     },
   };
@@ -64,7 +67,9 @@ function showError(el, textarea, error) {
   const box = document.createElement('div');
   box.className = 'build-ui-error';
   box.setAttribute('role', 'alert');
-  box.textContent = `This form could not load, so edit the JSON value below instead.\n${error && error.message ? error.message : error}`;
+  // A panel's textarea is read-only.
+  const what = textarea.readOnly ? 'This panel could not load; its data is shown below.' : 'This form could not load, so edit the JSON value below instead.';
+  box.textContent = `${what}\n${error && error.message ? error.message : error}`;
   el.shadowRoot.replaceChildren(box);
   console.error('[build-ui]', el.dataset.name, error);
 }
@@ -77,10 +82,11 @@ async function mountOne(el) {
   shadow.adoptedStyleSheets = [baseSheet];
   // Outside the shadow root a key event's target is this host, not the field, so
   // page shortcuts that skip typing in fields (Jenkins's "/" focuses search) would
-  // fire while someone types "feature/x". Keys typed in a field stay in the form.
+  // fire while someone types "feature/x". Character keys typed in a field ("/",
+  // Ctrl+K) stay in the form; Escape, arrows and Enter reach the module's listeners.
   el.addEventListener('keydown', (e) => {
     const t = e.composedPath()[0];
-    if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) e.stopPropagation();
+    if (e.key?.length === 1 && t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) e.stopPropagation();
   });
   let cleanup = null;
   const unmount = () => {
@@ -98,6 +104,8 @@ async function mountOne(el) {
       htmlKey ? fetchText(htmlKey, signal) : null,
       moduleKey ? import(contentURL + moduleKey) : null,
     ]);
+    // Removed while loading: mount would get a signal that has already fired.
+    if (signal.aborted) return;
     if (css) {
       const sheet = new CSSStyleSheet();
       sheet.replaceSync(css);
@@ -144,7 +152,9 @@ new MutationObserver((records) => {
   mountAll();
 }).observe(document.body, { childList: true, subtree: true });
 
-window.addEventListener('pagehide', () => {
+// A persisted page sits in the back/forward cache and returns as it was.
+window.addEventListener('pagehide', (e) => {
+  if (e.persisted) return;
   for (const el of document.querySelectorAll('.build-ui-root')) el.buildUiUnmount?.();
 });
 

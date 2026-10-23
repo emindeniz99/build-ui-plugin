@@ -1,6 +1,7 @@
 package io.jenkins.plugins.buildui;
 
 import hudson.model.InvisibleAction;
+import hudson.model.Job;
 
 /** A panel on a build's page; {@code summary.jelly} renders it with the shared host. */
 public class UiPanelAction extends InvisibleAction {
@@ -37,6 +38,12 @@ public class UiPanelAction extends InvisibleAction {
 
     public String getData() {
         return data;
+    }
+
+    /** Full name of the job whose build shows this panel, for {@code ui.job}. Used by the view. */
+    public String getJobFullName() {
+        Job<?, ?> job = UiParameterDefinition.requestJob();
+        return job == null ? "" : job.getFullName();
     }
 
     /** False only when an admin requires approval and this panel's code has none yet. */
