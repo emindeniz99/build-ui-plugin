@@ -37,19 +37,35 @@ export function tokenize(src) {
       let j = contentStart;
       let value = '';
       let dynamic = false;
+      const badEscapes = [];
       while (j < src.length && !src.startsWith(quote, j)) {
         if (src[j] === '\\' && j + 1 < src.length) {
           const n = src[j + 1];
           if (n === '\n') { j += 2; continue; } // line continuation
-          value += { n: '\n', t: '\t', r: '\r', b: '\b', f: '\f', 0: '\0' }[n] ?? n;
-          j += 2;
+          // Groovy 2.4, which Jenkins runs, accepts only these escapes (checked against groovy-all 2.4.21).
+          const unicode = /^u+([0-9a-fA-F]{4})/.exec(src.slice(j + 1, j + 12));
+          const octal = /^([0-3][0-7]{0,2}|[4-7][0-7]?)/.exec(src.slice(j + 1, j + 4));
+          if (n in SIMPLE_ESCAPES) {
+            value += SIMPLE_ESCAPES[n];
+            j += 2;
+          } else if (unicode) {
+            value += String.fromCharCode(parseInt(unicode[1], 16));
+            j += 1 + unicode[0].length;
+          } else if (octal) {
+            value += String.fromCharCode(parseInt(octal[1], 8));
+            j += 1 + octal[0].length;
+          } else {
+            badEscapes.push({ offset: j, escape: '\\' + n });
+            value += '\\' + n;
+            j += 2;
+          }
           continue;
         }
         if (c === '"' && src[j] === '$' && /[{a-zA-Z_]/.test(src[j + 1] || '')) dynamic = true;
         if (quote.length === 1 && src[j] === '\n') break; // unterminated single-line string
         value += src[j++];
       }
-      push({ type: 'str', value, start: i, contentStart, end: j + quote.length, dynamic });
+      push({ type: 'str', value, start: i, contentStart, end: j + quote.length, dynamic, badEscapes });
       i = j + quote.length;
       continue;
     }
@@ -104,6 +120,7 @@ export function findCalls(tokens, names) {
   return calls;
 }
 
+const SIMPLE_ESCAPES = { b: '\b', t: '\t', n: '\n', f: '\f', r: '\r', '\\': '\\', "'": "'", '"': '"', $: '$' };
 const OPERATORS = new Set(['+', '.', '?', '*', '-', '[', '|', '&']);
 const CONTINUES = new Set([',', ':', '=', '+', '-', '*', '/', '%', '.', '?', '|', '&', '<', '>', '!', '~', '^']);
 const lineOf = (src, offset) => src.slice(0, offset).split('\n').length;
@@ -193,7 +210,15 @@ function checkHtml(html, report) {
 /** Checks one Jenkinsfile's text; returns [{ level, line, column, message }]. */
 export async function checkSource(src) {
   const problems = [];
-  const calls = findCalls(tokenize(src), ['uiParameter', 'uiPanel']);
+  const tokens = tokenize(src);
+  // Groovy refuses to compile the whole file over one of these, wherever it is.
+  for (const t of tokens) {
+    for (const { offset, escape } of t.badEscapes ?? []) {
+      problems.push({ level: 'error', line: lineOf(src, offset), column: columnOf(src, offset),
+        message: `${escape} is not a Groovy escape; write \\${escape}` });
+    }
+  }
+  const calls = findCalls(tokens, ['uiParameter', 'uiPanel']);
   for (const call of calls) {
     const callLine = lineOf(src, call.start);
     const label = `${call.name}${call.args.name?.value ? ` '${call.args.name.value}'` : call.args.title?.value ? ` '${call.args.title.value}'` : ''}`;

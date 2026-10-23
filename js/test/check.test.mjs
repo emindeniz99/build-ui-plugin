@@ -141,3 +141,21 @@ test('command-style uiPanel keeps reading arguments after a computed value', asy
   assert.deepEqual(p.map((x) => x.message.split(':')[0]), ["uiPanel 'S'", 'uiPanel', "uiPanel 'M'"]);
   assert.ok(p.every((x) => /: module: /.test(x.message)), JSON.stringify(p));
 });
+
+test('a backslash escape Groovy rejects is an error at its Jenkinsfile line', async () => {
+  // Groovy refuses to compile '\\d' in a string; the checker must not report the file clean.
+  const p = errors(await checkSource([
+    "uiParameter(name: 'C', module: '''",
+    "export default () => /\\d+/.test('1')",
+    "''', css: 'a\\$b')",
+  ].join('\n')));
+  assert.deepEqual(p.map((x) => [x.line, x.message]), [[2, '\\d is not a Groovy escape; write \\\\d']]);
+});
+
+test('\\uXXXX and octal escapes are decoded the way Groovy decodes them', async () => {
+  // '\\u003cscript>' is a <script> tag once Groovy has read the string.
+  const p = errors(await checkSource(
+    "uiParameter(name: 'C', module: 'export default () => {}', html: '\\u003cscript\\076x()</script>')"));
+  assert.equal(p.length, 1);
+  assert.match(p[0].message, /<script>/);
+});
