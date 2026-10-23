@@ -25,7 +25,7 @@ original RFC is issue #94; the design here replaces it where they disagree.
 | Later runtimes | `solid2-html` once Solid 2.0 ships stable and wins the comparison in section 7 | It passes strict CSP as an RC; an RC is not a production dependency. |
 | Eval runtimes (Vue, Alpine) | Only behind a global admin setting, off by default | Jenkins runs CSP in report-only mode by default, so these would work for months and break on the day an admin enforces CSP. |
 | Component library | None in v1; packs (Web Awesome and others) stay possible later | Both motivating forms need inputs, checkboxes and cards only. |
-| Approval of form code | None in v1 (owner, 2026-10-23); an approval option goes on the roadmap before public release | Owner trusts everyone with push access on their Jenkins. |
+| Approval of form code | None (owner, 2026-10-23); an approval option may come later if a real need appears | Owner trusts everyone with push access on their Jenkins, and approval adds friction to every form change. |
 | Surfaces, in order | Build with Parameters form, then the `input` step, then panels on the build page | The `input` step is the same form problem; build-page panels are a different product. |
 | Declarative no-JS tier | After the MVP, as a module that implements `mount` | It needs nothing from the core and proves the contract with a second consumer. |
 | Parked | TSX through swc4j, Remote DOM worker tier, Web Awesome pack | No current need justifies the cost. |
@@ -94,7 +94,7 @@ Jenkins origin.
 when a module loads a same-origin file that someone else controls, such as a
 workspace file. A module that wants to do harm needs no such file.
 
-**Roadmap, before public release:** an approval option built on script-security.
+**Possible later addition, not planned:** an approval option built on script-security.
 `Language` is an extension point with two abstract methods,
 `ScriptApproval.configuring()` puts unapproved code in the pending list, and
 `using()` throws `UnapprovedUsageException` (Fact,
