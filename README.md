@@ -158,6 +158,20 @@ made in code. An invalid value gets HTTP 400 with the reason, or fails the
 - Send large values to `buildWithParameters` in the POST body: a 32 KiB value
   in the query string did not start a build in our tests.
 
+### Check a Jenkinsfile before you push it
+
+```bash
+pnpm --dir projects/jenkins-ui/js check path/to/Jenkinsfile
+```
+
+The checker finds every `uiParameter` and `uiPanel` call and reports, with
+Jenkinsfile line numbers: module syntax errors, `import` statements, a missing
+`export default`, `<script>` and inline handlers in `html`, schema keywords
+the controller rejects, invalid JSON in `schema`, `defaultJson` and `data`,
+and unknown runtimes. It reads string literals only; a field built from
+variables or a `"${…}"` GString gets a warning. It does not check `defaultJson`
+against the schema; the controller does that when a build uses the default.
+
 ### CSP and styling
 
 The plugin works with Jenkins's enforced policy and never weakens it. Inline

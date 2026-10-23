@@ -11,6 +11,8 @@
   "scripts": {
     "vendor": "node scripts/vendor-runtimes.mjs",
     "vendor:check": "node scripts/vendor-runtimes.mjs --check",
+    "check": "node scripts/check.mjs",
+    "test": "node --test test/check.test.mjs",
     "lab": "node lab/server.mjs",
     "lab:test": "node lab/run3.mjs",
     "e2e": "playwright test"

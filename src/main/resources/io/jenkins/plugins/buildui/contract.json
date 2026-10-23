@@ -1,0 +1,7 @@
+{
+  "runtimes": ["none", "preact11-htm3", "schema-form"],
+  "schemaAnnotations": ["$schema", "$id", "$comment", "title", "description", "default", "examples", "readOnly", "writeOnly", "deprecated", "format"],
+  "schemaValidations": ["type", "enum", "const", "required", "properties", "additionalProperties", "minProperties", "maxProperties", "items", "minItems", "maxItems", "uniqueItems", "minLength", "maxLength", "pattern", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"],
+  "schemaTypes": ["string", "number", "integer", "boolean", "object", "array", "null"],
+  "maxPatternLength": 256
+}

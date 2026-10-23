@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
+import io.jenkins.plugins.buildui.Contract;
 
 /**
  * A deliberately small JSON Schema (draft 2020-12) subset that runs on the
@@ -20,17 +21,12 @@ import java.util.regex.PatternSyntaxException;
  */
 public final class Schema {
 
-    static final int MAX_PATTERN_LENGTH = 256;
+    static final int MAX_PATTERN_LENGTH = Contract.MAX_PATTERN_LENGTH;
     static final long PATTERN_BUDGET_NANOS = 50_000_000L;
 
-    private static final Set<String> ANNOTATIONS = Set.of(
-            "$schema", "$id", "$comment", "title", "description", "default", "examples",
-            "readOnly", "writeOnly", "deprecated", "format");
-    private static final Set<String> VALIDATIONS = Set.of(
-            "type", "enum", "const", "required", "properties", "additionalProperties",
-            "minProperties", "maxProperties", "items", "minItems", "maxItems", "uniqueItems",
-            "minLength", "maxLength", "pattern", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum");
-    private static final Set<String> TYPES = Set.of("string", "number", "integer", "boolean", "object", "array", "null");
+    private static final Set<String> ANNOTATIONS = Contract.SCHEMA_ANNOTATIONS;
+    private static final Set<String> VALIDATIONS = Contract.SCHEMA_VALIDATIONS;
+    private static final Set<String> TYPES = Contract.SCHEMA_TYPES;
 
     private final JsonNode root;
 
@@ -70,7 +66,7 @@ public final class Schema {
                 continue;
             }
             if (!VALIDATIONS.contains(k)) {
-                throw bad(at, "keyword '" + k + "' is not supported; supported: " + new java.util.TreeSet<>(VALIDATIONS));
+                throw bad(at, "keyword '" + k + "' is not supported; supported: " + VALIDATIONS);
             }
             switch (k) {
                 case "type" -> {

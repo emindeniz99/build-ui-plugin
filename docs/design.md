@@ -69,10 +69,11 @@ Lifecycle rules:
    `preact11-htm3` keeps the ID; a new major gets a new ID, and old
    Jenkinsfiles keep working on the old one.
 
-Authoring rule (Proposal, no checker exists yet): `import` statements in job
-code should be a lint error. That is a dependency policy for a future CLI
-checker, not a security control; code can still build any URL and load it at
-runtime.
+Authoring rule (Tested): `js/scripts/check.mjs` reports `import` statements in
+job code as errors. That is a dependency policy, not a security control; code
+can still build any URL and load it at runtime. The checker and the controller
+read runtime IDs and schema keywords from one file, `contract.json`, so they
+cannot drift apart.
 
 ## 3. Trust model
 
@@ -130,8 +131,7 @@ which the author controls anyway, so they would be validated but not approved.
   inside the form's shadow root, never as an injected `<style>` tag. HTML goes
   in with `innerHTML`; enforced CSP drops inline event handlers in it without
   an error.
-- Proposal, not built: a CLI checker that warns about `on*=` attributes in
-  `html`.
+- The checker reports `on*=` attributes and `<script>` in `html`.
 - Enforced mode is tested on a real Jenkins. Report-only mode, the default on
   a production Jenkins, is tested only in the lab; it is the looser case.
 
@@ -258,7 +258,6 @@ JenkinsRule tests, 8 browser tests).
 ## 10. Not built yet
 
 - The Preact and Solid 2 comparison in section 7.
-- A CLI checker for job code (`import`, `on*=` attributes, schema lint).
 - Eval-based runtimes behind an admin setting (none ships, so no setting yet).
 - A Git refs data provider.
 - A release: there is no tag and no `.hpi` on GitHub Releases yet.

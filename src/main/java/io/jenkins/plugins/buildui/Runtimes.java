@@ -12,7 +12,7 @@ public final class Runtimes {
     public static final String PREACT = "preact11-htm3";
     public static final String SCHEMA_FORM = "schema-form";
 
-    public static final List<String> ALL = List.of(NONE, PREACT, SCHEMA_FORM);
+    public static final List<String> ALL = Contract.RUNTIMES;
 
     private Runtimes() {}
 
