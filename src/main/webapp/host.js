@@ -52,8 +52,14 @@ function makeUi(el, textarea, signal) {
   };
 }
 
+// Jenkins's .jenkins-input sets display, which beats the hidden attribute, so set both.
+function showTextarea(textarea, shown) {
+  textarea.hidden = !shown;
+  textarea.style.display = shown ? '' : 'none';
+}
+
 function showError(el, textarea, error) {
-  textarea.hidden = false;
+  showTextarea(textarea, true);
   const box = document.createElement('div');
   box.className = 'build-ui-error';
   box.setAttribute('role', 'alert');
@@ -98,7 +104,7 @@ async function mountOne(el) {
     if (typeof mount !== 'function') {
       throw new Error(job ? 'the module has no default export function mount()' : `runtime ${runtimeId} needs a module`);
     }
-    textarea.hidden = true;
+    showTextarea(textarea, false);
     const result = await mount({ root, ui: makeUi(el, textarea, signal), runtime, signal });
     if (signal.aborted) {
       if (typeof result === 'function') result();
