@@ -1,14 +1,16 @@
 # build-ui design
 
-Status: agreed direction, 2026-10-23. Nothing here is implemented yet. Each
-claim carries one of four labels so you can tell what we know from what we
-hope:
+Status: Phase 0 passed on 2026-10-23 on Jenkins 2.541.1 and 2.580.1 (section
+9). Each claim carries one of these labels so you can tell what we know from
+what we hope:
 
 - **Fact:** read in official docs or source code, with a link.
-- **Measured:** we ran it in the lab (Chromium, Playwright 1.56.1) on
-  2026-10-22/23. Firefox and Safari: not tested.
+- **Measured:** we ran it in the lab or against a real Jenkins (Chromium,
+  Playwright 1.56.1) on 2026-10-22/23. Firefox and Safari: not tested.
+- **Tested:** built, and a JenkinsRule or browser test in this project
+  covers it.
 - **Assumption:** we believe it, nobody has checked it yet.
-- **Proposal:** a design choice that Phase 0 still has to prove.
+- **Proposal:** a design choice not built yet.
 
 The project's goal and success test live in the [README](../README.md). The
 original RFC is issue #94; the design here replaces it where they disagree.
@@ -26,11 +28,12 @@ original RFC is issue #94; the design here replaces it where they disagree.
 | Eval runtimes (Vue, Alpine) | Only behind a global admin setting, off by default | Jenkins runs CSP in report-only mode by default, so these would work for months and break on the day an admin enforces CSP. |
 | Component library | None in v1; packs (Web Awesome and others) stay possible later | Both motivating forms need inputs, checkboxes and cards only. |
 | Approval of form code | None (owner, 2026-10-23); an approval option may come later if a real need appears | Owner trusts everyone with push access on their Jenkins, and approval adds friction to every form change. |
-| Surfaces, in order | Build with Parameters form, then the `input` step, then panels on the build page | The `input` step is the same form problem; build-page panels are a different product. |
-| Declarative no-JS tier | After the MVP, as a module that implements `mount` | It needs nothing from the core and proves the contract with a second consumer. |
+| Surfaces, in order | Build with Parameters form, then the `input` step, then panels on the build page (`uiPanel` step). All three are built. | The `input` step is the same form problem; build-page panels are a different product. |
+| Declarative no-JS tier | Built as the `schema-form` runtime, which exports `mount` itself, so a job needs no module | It needs nothing from the core and proves the contract with a second consumer. |
+| Data providers | `DataProvider` extension point; v1 ships `jenkinsRuns` | The reference form needs server data; Git refs wait for a real form that needs them. |
 | Parked | TSX through swc4j, Remote DOM worker tier, Web Awesome pack | No current need justifies the cost. |
 
-## 2. Module contract (Proposal)
+## 2. Module contract (Tested)
 
 A job module exports one async function:
 
@@ -48,8 +51,9 @@ export default async function mount({ root, ui, runtime, signal }) {
   import map.
 - `signal`: an `AbortSignal`. The host aborts it when the form goes away.
 - `ui`: the value channel, kept small: `value`, `setValue(next)`,
-  `query(providerId, args, { signal })`. The RFC's `validate` and `subscribe`
-  join only if a real form needs them.
+  `query(providerId, args, { signal })`, plus read-only `job`, `name` and
+  `schema`. The RFC's `validate` and `subscribe` join only if a real form
+  needs them.
 
 Lifecycle rules:
 
@@ -65,9 +69,10 @@ Lifecycle rules:
    `preact11-htm3` keeps the ID; a new major gets a new ID, and old
    Jenkinsfiles keep working on the old one.
 
-Authoring rule: `import` statements in job code are a lint error. This is a
-dependency policy for the CLI checker, not a security control; code can still
-build any URL and load it at runtime.
+Authoring rule (Proposal, no checker exists yet): `import` statements in job
+code should be a lint error. That is a dependency policy for a future CLI
+checker, not a security control; code can still build any URL and load it at
+runtime.
 
 ## 3. Trust model
 
@@ -104,40 +109,53 @@ The approved set would cover what runs in other people's browsers: runtime,
 module, HTML, CSS and data sources. Schema and defaults only affect the build,
 which the author controls anyway, so they would be validated but not approved.
 
-## 4. CSP and module serving (Proposal)
+## 4. CSP and module serving (Tested)
 
 - Strict CSP is the design target: no `unsafe-eval`, and the plugin never
   loosens Jenkins's global policy (no `jenkins.security.csp.Contributor` entry
   for `unsafe-eval`).
-- The controller stores module and CSS bytes by content hash and serves them
-  from a plugin endpoint with `Content-Type: text/javascript` or `text/css`,
-  long-lived caching and a read-permission check on the job. The hash in the
-  URL is a cache key; the server looks the bytes up and checks permission
-  before it answers.
-- CSS reaches the page as a `<link>` to that endpoint or through a
-  constructed stylesheet (`adoptedStyleSheets`), never as an injected
-  `<style>` tag.
-- The CLI checker warns about `style=` and `on*=` attributes in `html`,
-  because enforced CSP drops them without an error.
-- Phase 0 tests enforced and report-only modes on a real Jenkins.
+- The controller keeps module, CSS and HTML text in `ContentStore`, keyed by
+  the SHA-256 of the bytes, and `/build-ui/<sha256>.mjs|.css|.html.txt` serves
+  them with `text/javascript`, `text/css` or `text/plain`,
+  `Cache-Control: private, max-age=31536000, immutable`, and an Overall/Read
+  check. The hash in the URL is a cache key: an unknown key gets 404.
+- **Differs from the original proposal:** the check is Overall/Read, not Read
+  on the job. The same key serves the build form, `input` step pages and build
+  panels, so the endpoint does not know which job asked. A user with
+  Overall/Read who learns a hash can fetch that text. The hash appears only on
+  pages of jobs the user can read.
+- The store holds the 2000 most recently used entries in memory. Definitions
+  register their text each time a page renders, so a restart refills it.
+- CSS reaches the page through a constructed stylesheet (`adoptedStyleSheets`)
+  inside the form's shadow root, never as an injected `<style>` tag. HTML goes
+  in with `innerHTML`; enforced CSP drops inline event handlers in it without
+  an error.
+- Proposal, not built: a CLI checker that warns about `on*=` attributes in
+  `html`.
+- Enforced mode is tested on a real Jenkins. Report-only mode, the default on
+  a production Jenkins, is tested only in the lab; it is the looser case.
 
-## 5. Validation (Proposal)
+## 5. Validation (Tested)
 
 - `UiParameterDefinition` extends `SimpleParameterDefinition`, so the
   Pipeline `build` step converts string values through `createValue(String)`
-  instead of failing.
+  and validates them.
 - One JSON Schema check runs on the controller for every path that creates a
-  value. Phase 0 tests whether a queue-level check (`QueueDecisionHandler`)
-  can reject an invalid value before any build starts, which would also cover
-  scheduled builds and values built in code.
-- Limits: JSON size, nesting depth, array length, property count, schema size,
-  and a guard on `pattern` (ReDoS). No remote `$ref` resolution (SSRF).
-- `defaultJson` is validated when the job is saved; an invalid default fails
-  loudly.
-- `params.BUILD_CONFIG` is a JSON string. It also becomes an environment
-  variable in every build process, so the plugin caps its size.
-- Document POST for `buildWithParameters`: large values over GET hit Jetty's
-  8 KB header limit (Assumption, from the review; not measured).
+  value: the form and `buildWithParameters` answer 400 with the reason, the
+  `build` step fails with it, and `QueueGuard` (a `QueueDecisionHandler`)
+  refuses to queue a hand-built invalid `ParametersAction`.
+- Limits: 256 KiB per document, nesting depth 32, 1000 array items, 1000
+  object properties, no duplicate keys, patterns up to 256 characters with a
+  50 ms budget per value. No `$ref`; any keyword outside the subset fails when
+  the job is configured.
+- `schema` and `defaultJson` must parse when the job is configured. The
+  default is checked against the schema when a build uses it, and by the form
+  check on the freestyle configuration page; an invalid default fails that
+  build with the reason.
+- `params.BUILD_CONFIG` is a compact JSON string. Values over 32 KiB are not
+  exported as an environment variable.
+- A 32 KiB value in the `buildWithParameters` query string did not start a
+  build; in the POST body it did (Measured). The README says to use the body.
 
 ## 6. Measurements
 
@@ -185,6 +203,18 @@ Other measured behaviour:
   accessor, and the element stops re-rendering without an error.
 - uhtml 5.0.9: toggling a conditional template threw
   `hole.n.replaceWith is not a function`.
+- Jenkins 2.580.1 sends the same CSP header as 2.541.1.
+- Jenkins answers the *Build with Parameters* page itself with HTTP 405 on
+  purpose, so scripts do not mistake the form for a triggered build; the
+  browser logs it as a failed resource.
+- Jenkins's `.jenkins-input` class sets `display`, which overrides the
+  `hidden` attribute; the host hides the fallback textarea with
+  `style.display` too.
+- Java 21's regex engine runs `^(a+)+$`, `^(a|aa)+$` and `^(\w+\s?)*$` against
+  their classic attack strings in under 1 ms, but `^(.*?,){14}P` against a
+  30-field CSV line took 9.7 s and `^(a+)+\1$` took 1.3 s. The 50 ms budget
+  stops the first in the test suite.
+- Runtime bundles, minified and gzipped: `preact11-htm3` 6.8 KB.
 
 Facts behind the measurements: Jenkins enforces UI CSP only when an admin
 turns it on, since 2.539
@@ -202,23 +232,33 @@ small test elements of our own, not a component library.
 
 ## 8. Assumptions
 
-- The *Build with Parameters* page on 2.541 and 2.580 renders a plugin's
-  parameter view the same way.
-- A queue-level check sees every parameter value before a build starts.
+- The plugin behaves the same in Firefox and Safari as in Chromium.
+- In a multibranch job, a branch's Jenkinsfile writes its parameter
+  definitions into that branch job (section 3).
 
 ## 9. Phase 0 acceptance criteria
 
-Phase 0 passes when a minimal plugin on Jenkins 2.541.x and 2.580.x shows:
+Phase 0 passes when a minimal plugin on Jenkins 2.541.x and 2.580.x shows the
+items below. Result on 2026-10-23: all five passed on 2.541.1 and 2.580.1 (32
+JenkinsRule tests, 8 browser tests).
 
 1. The real Jenkins CSP header, copied into the lab, and every lab result
-   re-run against it.
+   re-run against it. Passed: section 6.
 2. A module and its CSS served under enforced CSP, with the right MIME types,
-   content-hash URLs and a permission check.
+   content-hash URLs and a permission check. Passed: `UiParameterTest` and
+   the browser suite, which fails on any CSP violation.
 3. `preact11-htm3` mounting, unmounting, and handling a `mount` that rejects or
-   outlives its form.
+   outlives its form. Passed: browser tests for both cases.
 4. The JSON value reaching `params.BUILD_CONFIG`, validated, from the form,
    `buildWithParameters` and the Pipeline `build` step; invalid values
-   rejected on each path.
-5. The reference form in about 60 Jenkinsfile lines.
+   rejected on each path. Passed: `UiParameterTest` and the browser suite.
+5. The reference form in about 60 Jenkinsfile lines. Passed:
+   `examples/reference.Jenkinsfile` has 53 lines.
 
-If a criterion fails, we revise this design before building on it.
+## 10. Not built yet
+
+- The Preact and Solid 2 comparison in section 7.
+- A CLI checker for job code (`import`, `on*=` attributes, schema lint).
+- Eval-based runtimes behind an admin setting (none ships, so no setting yet).
+- A Git refs data provider.
+- A release: there is no tag and no `.hpi` on GitHub Releases yet.
