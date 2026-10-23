@@ -123,7 +123,10 @@ validates them and nobody approves them. Choices and the facts behind them:
 - `configuring()` approves without asking when Jenkins security is off, and
   skips the pending list for a non-admin under *Force sandbox* (Fact: read in
   the bytecode of script-security 1412 and 1436). The plugin keeps both
-  behaviours to match Groovy approval.
+  behaviours to match Groovy approval. Under *Force sandbox* it does not call
+  `configuring()` for a non-admin at all, and does not remember the hash:
+  that call also drops the form's pending entry, and a remembered hash
+  stopped a later admin view from listing the form.
 - Data sources are not part of the approved text: providers check the
   viewer's permissions on every query, and an admin configures the ArgoCD
   servers.

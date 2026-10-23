@@ -152,6 +152,24 @@ class FormApprovalTest {
     }
 
     @Test
+    void underForceSandboxAnAdminStillGetsTheFormListedAfterOthersViewedIt() throws Exception {
+        // Developers usually open the form before an admin does; their views must not hide it from approval.
+        BuildUiConfiguration.get().setRequireApproval(true);
+        ScriptApproval.get().setForceSandbox(true);
+        defineForm(module("v1"));
+
+        assertTrue(formPageAs("dev").contains(NOTICE));
+        assertTrue(pending().isEmpty(), "under Force sandbox a non-admin view lists nothing");
+        formPageAs("admin");
+        assertEquals(1, pending().size(), "the admin's view must list the form");
+        formPageAs("dev");
+        assertEquals(1, pending().size(), "a later non-admin view must not drop the pending entry");
+
+        ScriptApproval.get().approveScript(pending().get(0).getHash());
+        assertTrue(formPageAs("dev").contains("data-module=\"" + moduleKey(module("v1")) + "\""), "approved form must render");
+    }
+
+    @Test
     void aFormWithoutCodeNeedsNoApproval() throws Exception {
         BuildUiConfiguration.get().setRequireApproval(true);
         job.setDefinition(new CpsFlowDefinition("""

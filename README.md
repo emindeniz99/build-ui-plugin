@@ -225,7 +225,7 @@ With approval on:
   or Jenkins restarts.
 - Like Groovy scripts, everything counts as approved when Jenkins security is
   off. With *Force sandbox* on, only an admin opening the form adds it to the
-  pending list.
+  pending list; views by other users before or after leave the list as it is.
 
 ### Validation and limits
 
