@@ -161,6 +161,26 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
         return errors;
     }
 
+    /** Whether the schema uses {@code x-git-ref}, so values need {@link #refErrorsFor}. */
+    boolean hasRefChecks() {
+        try {
+            Schema s = compiledSchema();
+            return s != null && s.node().findValue("x-git-ref") != null;
+        } catch (IllegalArgumentException e) {
+            return false; // QueueGuard refuses values of a schema that does not compile
+        }
+    }
+
+    /** Only the {@code x-git-ref} errors of {@code json}; contacts the Git server unless its refs are cached. */
+    List<String> refErrorsFor(String json, Job<?, ?> job) {
+        Schema s = compiledSchema();
+        List<String> errors = new ArrayList<>();
+        if (s != null) {
+            checkRefs(s.node(), Json.parse(json, "value of " + getName()), "", job, errors);
+        }
+        return errors;
+    }
+
     private static void checkRefs(JsonNode schema, JsonNode value, String at, Job<?, ?> job, List<String> errors) {
         if (!schema.isObject()) {
             return;

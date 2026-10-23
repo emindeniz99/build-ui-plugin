@@ -31,7 +31,7 @@ never run locally (only Chromium is installed here). Open items:
 - 2026-10-23: runtime IDs and schema keywords live in contract.json, read by Java and the checker
 - 2026-10-23: release by tag jenkins-ui-v<semver>; the .hpi goes to GitHub Releases, never git
 - 2026-10-23: ArgoCD servers are admin config (UI or JCasC); the browser names an app, never a server URL; cache key is URL + credentials + app
-- 2026-10-23: x-git-ref checks run on every path the queue sees, but not on the default value (no job context)
+- 2026-10-23: x-git-ref checks run on every queued build (defaults included) in RefGuard, a QueueTaskDispatcher that lists refs on a pool thread and cancels the item; never in QueueGuard — review finding: Git I/O under the queue lock stalled every job
 - 2026-10-23: Dependabot cooldowns are all 7 days, matching pnpm minimumReleaseAge
 
 ## Learnings
@@ -54,6 +54,10 @@ never run locally (only Chromium is installed here). Open items:
 - 2026-10-23: a parameterized job answers a bare POST /build with 400; use buildWithParameters
 - 2026-10-23: `git commit --only` refuses untracked files; use the git add fallback
 - 2026-10-23: ScriptApproval.configuring() saves to disk on every call and auto-approves when security is off; getPendingScripts() is restricted API
+- 2026-10-23: Queue.schedule2 calls QueueDecisionHandler.shouldSchedule with the global queue lock held; do no network I/O there
+- 2026-10-23: XStream (config.xml, build.xml) sets fields without setters; validate in readResolve, and do not throw there (robust converters drop the element silently)
+- 2026-10-23: Stapler binds only keys a form sends; a GlobalConfiguration with a repeatable list must reset it in configure()
+- 2026-10-23: HttpRequest.timeout ends when headers arrive (JDK 17/21); bound the body with sendAsync().get(timeout)
 
 ## Done
 

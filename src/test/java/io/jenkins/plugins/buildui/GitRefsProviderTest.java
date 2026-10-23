@@ -8,10 +8,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.json.JsonMapper;
+import hudson.model.FreeStyleBuild;
+import hudson.model.FreeStyleProject;
 import hudson.model.Item;
 import hudson.model.ParametersAction;
+import hudson.model.ParametersDefinitionProperty;
 import hudson.model.Result;
 import hudson.model.StringParameterValue;
+import hudson.model.queue.QueueTaskFuture;
+import hudson.plugins.git.GitSCM;
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -19,6 +28,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.StreamSupport;
 import jenkins.model.Jenkins;
 import org.htmlunit.HttpMethod;
@@ -26,6 +40,7 @@ import org.htmlunit.Page;
 import org.htmlunit.WebRequest;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
+import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -199,12 +214,73 @@ class GitRefsProviderTest {
     @Test
     void xGitRefIsCheckedForBuildsThatDoNotComeFromAForm(JenkinsRule j) throws Exception {
         WorkflowJob job = job(j, "release", TAG_PARAMETER);
-        assertNull(job.scheduleBuild2(0, new ParametersAction(new StringParameterValue("CFG", "{\"tag\":\"v9.9.9\"}"))));
-        assertNotNull(job.scheduleBuild2(0, new ParametersAction(new StringParameterValue("CFG", "{\"tag\":\"v1.1\"}"))));
+        // Queued, held while the refs are listed outside the queue lock, then cancelled before it starts.
+        QueueTaskFuture<WorkflowRun> bad = job.scheduleBuild2(0, new ParametersAction(new StringParameterValue("CFG", "{\"tag\":\"v9.9.9\"}")));
+        assertNotNull(bad);
+        assertThrows(CancellationException.class, () -> bad.get(60, TimeUnit.SECONDS));
+        WorkflowRun good = job.scheduleBuild2(0, new ParametersAction(new StringParameterValue("CFG", "{\"tag\":\"v1.1\"}"))).get(60, TimeUnit.SECONDS);
+        assertEquals(2, good.getNumber(), "the refused build must not have started");
+        j.assertLogContains("CFG={\"tag\":\"v1.1\"}", j.waitForCompletion(good));
 
         WorkflowJob up = j.createProject(WorkflowJob.class, "up");
         up.setDefinition(new CpsFlowDefinition("build job: 'release', parameters: [string(name: 'CFG', value: '{\"tag\":\"v9.9.9\"}')]", true));
         j.buildAndAssertStatus(Result.FAILURE, up);
+    }
+
+    @Test
+    void aSlowGitServerHoldsOnlyItsOwnBuildAndNotTheWholeQueue(JenkinsRule j) throws Exception {
+        // Jenkins asks QueueDecisionHandlers while it holds the lock for the whole queue. Listing refs
+        // there let one slow or unreachable Git server stop every job on the controller from scheduling.
+        ScheduledExecutorService closer = Executors.newSingleThreadScheduledExecutor();
+        List<Socket> held = new CopyOnWriteArrayList<>();
+        try (ServerSocket tarpit = new ServerSocket(0, 50, InetAddress.getLoopbackAddress())) {
+            Thread acceptor = new Thread(() -> {
+                try {
+                    while (true) {
+                        Socket s = tarpit.accept();
+                        held.add(s);
+                        // Never answers; lets go after 15 s so the old behaviour fails instead of hanging.
+                        closer.schedule(() -> close(s), 15, TimeUnit.SECONDS);
+                    }
+                } catch (IOException e) {
+                    // closed by the test
+                }
+            });
+            acceptor.setDaemon(true);
+            acceptor.start();
+
+            FreeStyleProject slow = j.createFreeStyleProject("slow");
+            slow.setScm(new GitSCM("http://127.0.0.1:" + tarpit.getLocalPort() + "/repo.git"));
+            UiParameterDefinition d = new UiParameterDefinition("CFG");
+            d.setSchema("{\"type\":\"object\",\"properties\":{\"tag\":{\"type\":\"string\",\"x-git-ref\":\"tag\"}}}");
+            slow.addProperty(new ParametersDefinitionProperty(d));
+            FreeStyleProject other = j.createFreeStyleProject("other");
+
+            long start = System.nanoTime();
+            QueueTaskFuture<FreeStyleBuild> queued = slow.scheduleBuild2(0, new ParametersAction(new StringParameterValue("CFG", "{\"tag\":\"v1.0\"}")));
+            long millis = (System.nanoTime() - start) / 1_000_000;
+            assertTrue(millis < 5_000, "scheduling waited " + millis + " ms for the Git server");
+            assertNotNull(queued);
+            j.buildAndAssertSuccess(other);
+            assertNull(slow.getLastBuild(), "a build whose refs are not checked yet must not start");
+
+            held.forEach(GitRefsProviderTest::close);
+            tarpit.close();
+            // The refs cannot be listed, so the build is cancelled and never starts.
+            assertThrows(CancellationException.class, () -> queued.get(60, TimeUnit.SECONDS));
+            assertNull(slow.getLastBuild());
+        } finally {
+            closer.shutdownNow();
+            held.forEach(GitRefsProviderTest::close);
+        }
+    }
+
+    private static void close(Socket s) {
+        try {
+            s.close();
+        } catch (IOException e) {
+            // already closed
+        }
     }
 
     @Test

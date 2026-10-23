@@ -165,6 +165,16 @@ validates them and nobody approves them. Choices and the facts behind them:
   value: the form and `buildWithParameters` answer 400 with the reason, the
   `build` step fails with it, and `QueueGuard` (a `QueueDecisionHandler`)
   refuses to queue a hand-built invalid `ParametersAction`.
+- `x-git-ref` is checked before the build starts, never under the queue
+  lock. `Queue.schedule2` calls every `QueueDecisionHandler` with the lock
+  for the whole queue held (Fact: jenkins-core 2.541.1 bytecode), and listing
+  refs is a network call with a 10-minute transport timeout, so one slow Git
+  server stopped every job from scheduling. Request paths (form,
+  `buildWithParameters`) check refs on the request thread and answer 400.
+  For every queued build, `RefGuard` (a `QueueTaskDispatcher`) keeps the
+  item blocked while a pool thread lists the refs, then lets it run or
+  cancels it. A cancelled build never starts and takes no build number; the
+  reason is in the controller log, and a waiting `build` step fails.
 - Limits: 256 KiB per document, nesting depth 32, 1000 array items, 1000
   object properties, no duplicate keys, patterns up to 256 characters. All
   patterns of one document share a 50 ms budget: a per-string budget let a

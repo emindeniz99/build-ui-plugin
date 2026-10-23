@@ -153,8 +153,11 @@ once, caches each answer for 30 seconds, and needs the Git plugin.
 
 To make the controller reject a ref that does not exist, mark the property in
 the schema: `{ "type": "string", "x-git-ref": "tag" }` (or `"branch"`, `"any"`,
-`true`). The form and `buildWithParameters` answer 400 with the reason; a
-downstream `build` step or a script gets its build refused by the queue. A job
+`true`). The form and `buildWithParameters` answer 400 with the reason. A
+build queued another way (a downstream `build` step, a timer, a script) waits
+in the queue while Jenkins lists the refs, and is cancelled before it starts
+if a ref does not exist or the refs cannot be listed; the reason goes to the
+controller log. A slow Git server holds only that build, not the queue. A job
 that has not checked out yet has no refs to compare with, so the check waits
 for its first checkout; `defaultJson` is checked when a build uses it.
 
