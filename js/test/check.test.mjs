@@ -127,3 +127,17 @@ test('a file the CLI cannot read is one error line, not a stack trace', () => {
   assert.equal(r.status, 1);
   assert.deepEqual(r.stderr.trim().split('\n'), ['examples/missing.Jenkinsfile: cannot read: ENOENT']);
 });
+
+test('command-style uiPanel keeps reading arguments after a computed value', async () => {
+  // Panel data is usually computed, so the module after it must still be checked.
+  const p = errors(await checkSource(`
+    uiPanel title: 'S', data: JsonOutput.toJson([a: 1]), module: 'export default () => { nope('
+    uiPanel title: 'a' + b, module: 'nope('
+    uiPanel title: 'M',
+      data: readFile('d.json'),
+      module: 'nope('
+    uiPanel title: 'E', module: 'export default () => {}', data: x
+    otherStep module: 'nope('`));
+  assert.deepEqual(p.map((x) => x.message.split(':')[0]), ["uiPanel 'S'", 'uiPanel', "uiPanel 'M'"]);
+  assert.ok(p.every((x) => /: module: /.test(x.message)), JSON.stringify(p));
+});

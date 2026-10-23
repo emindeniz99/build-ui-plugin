@@ -17,13 +17,18 @@ const contract = JSON.parse(readFileSync(
 
 // ---- Groovy scanning ----------------------------------------------------
 
-/** Returns tokens: { type: 'id'|'str'|'punct', value, start, end, dynamic? } with comments skipped. */
+/**
+ * Returns tokens: { type: 'id'|'str'|'punct', value, start, end, dynamic?, nl? } with comments skipped.
+ * nl is true on a token that starts a new line.
+ */
 export function tokenize(src) {
   const tokens = [];
   let i = 0;
+  let nl = false;
+  const push = (token) => { if (nl) token.nl = true; nl = false; tokens.push(token); };
   while (i < src.length) {
     const c = src[i];
-    if (/\s/.test(c)) { i++; continue; }
+    if (/\s/.test(c)) { if (c === '\n') nl = true; i++; continue; }
     if (src.startsWith('//', i)) { i = src.indexOf('\n', i); if (i < 0) break; continue; }
     if (src.startsWith('/*', i)) { const e = src.indexOf('*/', i + 2); i = e < 0 ? src.length : e + 2; continue; }
     if (c === "'" || c === '"') {
@@ -44,18 +49,18 @@ export function tokenize(src) {
         if (quote.length === 1 && src[j] === '\n') break; // unterminated single-line string
         value += src[j++];
       }
-      tokens.push({ type: 'str', value, start: i, contentStart, end: j + quote.length, dynamic });
+      push({ type: 'str', value, start: i, contentStart, end: j + quote.length, dynamic });
       i = j + quote.length;
       continue;
     }
     if (/[A-Za-z_$]/.test(c)) {
       let j = i;
       while (j < src.length && /[\w$]/.test(src[j])) j++;
-      tokens.push({ type: 'id', value: src.slice(i, j), start: i, end: j });
+      push({ type: 'id', value: src.slice(i, j), start: i, end: j });
       i = j;
       continue;
     }
-    tokens.push({ type: 'punct', value: c, start: i, end: i + 1 });
+    push({ type: 'punct', value: c, start: i, end: i + 1 });
     i++;
   }
   return tokens;
@@ -75,6 +80,10 @@ export function findCalls(tokens, names) {
     let depth = 0;
     for (; m < tokens.length; m++) {
       const u = tokens[m];
+      // A command-style call ends at ';' or at a new line, unless the line
+      // break sits after ',' or an operator, or before '.' or '?.'.
+      if (!paren && depth === 0 && m > k + 1 && (u.value === ';' ||
+          (u.nl && !CONTINUES.has(tokens[m - 1].value) && u.value !== '.' && u.value !== '?'))) break;
       if (u.value === '(' || u.value === '[' || u.value === '{') depth++;
       if (u.value === ')' || u.value === ']' || u.value === '}') {
         if (depth === 0) break;
@@ -86,19 +95,17 @@ export function findCalls(tokens, names) {
         const plainLiteral = v?.type === 'str' && !OPERATORS.has(tokens[m + 3]?.value);
         call.args[u.value] = plainLiteral ? v : { nonLiteral: true, start: u.start };
         m += 2;
-        if (!paren) {
-          const after = tokens[m + 1];
-          if (!after || after.value !== ',') break;
-        }
       }
     }
     calls.push(call);
-    k = m;
+    // A command-style call stops on the first token of the next statement; scan that token again.
+    k = paren ? m : m - 1;
   }
   return calls;
 }
 
 const OPERATORS = new Set(['+', '.', '?', '*', '-', '[', '|', '&']);
+const CONTINUES = new Set([',', ':', '=', '+', '-', '*', '/', '%', '.', '?', '|', '&', '<', '>', '!', '~', '^']);
 const lineOf = (src, offset) => src.slice(0, offset).split('\n').length;
 const columnOf = (src, offset) => offset - src.lastIndexOf('\n', offset - 1);
 
