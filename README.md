@@ -263,7 +263,8 @@ Jenkinsfile line numbers: module syntax errors, `import` statements, a missing
 the controller rejects, invalid JSON in `schema`, `defaultJson` and `data`,
 and unknown runtimes. It reads string literals only; a field built from
 variables or a `"${…}"` GString gets a warning. It does not check `defaultJson`
-against the schema; the controller does that when a build uses the default.
+against the schema; the controller does that when a build uses the default. A
+file with no `uiParameter` or `uiPanel` call fails the check.
 
 ### CSP and styling
 

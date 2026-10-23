@@ -159,3 +159,22 @@ test('\\uXXXX and octal escapes are decoded the way Groovy decodes them', async 
   assert.equal(p.length, 1);
   assert.match(p[0].message, /<script>/);
 });
+
+test('a slashy or dollar-slashy regex does not hide the calls after it', async () => {
+  // /\/*$/ strips trailing slashes; its "/*" is not a comment and must not swallow the file.
+  const p = errors(await checkSource(`
+    def s = 'x/'.replaceAll(/\\/*$/, '')
+    def t = $/a/*b/$
+    def n = 4 / 2 / 1
+    uiParameter(name: 'C', module: 'nope(')`));
+  assert.equal(p.length, 1);
+  assert.match(p[0].message, /^uiParameter 'C': module: /);
+});
+
+test('the CLI fails a file in which it found nothing to check', () => {
+  // A file with no calls usually means the scan went wrong; "no errors" would be a false pass.
+  const r = cli(['js/package.json'], projectDir);
+  assert.equal(r.status, 1, r.stdout);
+  assert.doesNotMatch(r.stdout, /no errors/);
+  assert.match(r.stdout, /js\/package\.json:1:1: warning: no uiParameter or uiPanel call found/);
+});

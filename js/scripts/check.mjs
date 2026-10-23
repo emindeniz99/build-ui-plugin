@@ -18,7 +18,7 @@ const contract = JSON.parse(readFileSync(
 // ---- Groovy scanning ----------------------------------------------------
 
 /**
- * Returns tokens: { type: 'id'|'str'|'punct', value, start, end, dynamic?, nl? } with comments skipped.
+ * Returns tokens: { type: 'id'|'str'|'num'|'punct', value, start, end, dynamic?, nl? } with comments skipped.
  * nl is true on a token that starts a new line.
  */
 export function tokenize(src) {
@@ -31,6 +31,33 @@ export function tokenize(src) {
     if (/\s/.test(c)) { if (c === '\n') nl = true; i++; continue; }
     if (src.startsWith('//', i)) { i = src.indexOf('\n', i); if (i < 0) break; continue; }
     if (src.startsWith('/*', i)) { const e = src.indexOf('*/', i + 2); i = e < 0 ? src.length : e + 2; continue; }
+    // Slashy /.../ (only where an operand can start, so a / b stays division) and dollar-slashy $/.../$.
+    const prev = tokens[tokens.length - 1];
+    const dollar = src.startsWith('$/', i);
+    if (dollar || (c === '/' && (!prev || (prev.type === 'punct' && !')]}'.includes(prev.value)) ||
+        (prev.type === 'id' && SLASHY_AFTER.has(prev.value))))) {
+      const contentStart = i + (dollar ? 2 : 1);
+      const close = dollar ? '/$' : '/';
+      let j = contentStart;
+      let value = '';
+      let dynamic = false;
+      while (j < src.length && !src.startsWith(close, j)) {
+        const esc = dollar ? ['$$', '$/'].find((e) => src.startsWith(e, j)) : src.startsWith('\\/', j) && '\\/';
+        if (esc) { value += esc[1]; j += 2; continue; }
+        if (src[j] === '$' && /[{a-zA-Z_]/.test(src[j + 1] || '')) dynamic = true;
+        value += src[j++];
+      }
+      push({ type: 'str', value, start: i, contentStart, end: j + close.length, dynamic });
+      i = j + close.length;
+      continue;
+    }
+    if (/[0-9]/.test(c)) {
+      let j = i;
+      while (j < src.length && /[\w.]/.test(src[j])) j++;
+      push({ type: 'num', value: src.slice(i, j), start: i, end: j });
+      i = j;
+      continue;
+    }
     if (c === "'" || c === '"') {
       const quote = src.startsWith(c.repeat(3), i) ? c.repeat(3) : c;
       const contentStart = i + quote.length;
@@ -120,6 +147,7 @@ export function findCalls(tokens, names) {
   return calls;
 }
 
+const SLASHY_AFTER = new Set(['return', 'case', 'in', 'assert']);
 const SIMPLE_ESCAPES = { b: '\b', t: '\t', n: '\n', f: '\f', r: '\r', '\\': '\\', "'": "'", '"': '"', $: '$' };
 const OPERATORS = new Set(['+', '.', '?', '*', '-', '[', '|', '&']);
 const CONTINUES = new Set([',', ':', '=', '+', '-', '*', '/', '%', '.', '?', '|', '&', '<', '>', '!', '~', '^']);
@@ -207,6 +235,8 @@ function checkHtml(html, report) {
   }
 }
 
+const NO_CALLS = 'no uiParameter or uiPanel call found';
+
 /** Checks one Jenkinsfile's text; returns [{ level, line, column, message }]. */
 export async function checkSource(src) {
   const problems = [];
@@ -273,7 +303,7 @@ export async function checkSource(src) {
       report('error', `runtime 'schema-form' needs a schema whose type is "object"`, schemaToken?.start);
     }
   }
-  if (calls.length === 0) problems.push({ level: 'warning', line: 1, column: 1, message: 'no uiParameter or uiPanel call found' });
+  if (calls.length === 0) problems.push({ level: 'warning', line: 1, column: 1, message: NO_CALLS });
   return problems.sort((a, b) => a.line - b.line || a.column - b.column);
 }
 
@@ -286,6 +316,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   // `pnpm --dir js check <file>` runs this in js/; pnpm puts the caller's directory in INIT_CWD.
   const base = process.env.INIT_CWD ?? process.cwd();
   let errors = 0;
+  let empty = 0; // a file with no call to check usually means the scan went wrong
   for (const file of files) {
     let src;
     try {
@@ -297,9 +328,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     }
     for (const p of await checkSource(src)) {
       if (p.level === 'error') errors++;
+      if (p.message === NO_CALLS) empty++;
       console.log(`${file}:${p.line}:${p.column}: ${p.level}: ${p.message}`);
     }
   }
-  if (errors === 0) console.log(`${files.length} file(s) checked, no errors`);
-  process.exit(errors ? 1 : 0);
+  if (empty) console.log(`${empty} of ${files.length} file(s) had nothing to check`);
+  else if (errors === 0) console.log(`${files.length} file(s) checked, no errors`);
+  process.exit(errors || empty ? 1 : 0);
 }
