@@ -12,6 +12,16 @@ async function submitBuildForm(page, request, job) {
   return consoleText(request, job, next);
 }
 
+test('the README example works as written', async ({ page, request }) => {
+  const readme = readFileSync(new URL('../../README.md', import.meta.url), 'utf8');
+  const example = readme.match(/```groovy\n(pipeline \{[\s\S]*?)```/)[1];
+  await pipelineJob(request, 'readme', example);
+  await build(request, 'readme');
+  await page.goto('job/readme/build?delay=0sec');
+  await page.getByLabel('Branch').fill('docs');
+  expect(await submitBuildForm(page, request, 'readme')).toContain('config: {"branch":"docs"}');
+});
+
 test('the reference form fits the ease test: about 60 Jenkinsfile lines', () => {
   expect(reference.trimEnd().split('\n').length).toBeLessThanOrEqual(60);
 });
@@ -61,6 +71,23 @@ test('a module that throws shows the error and the JSON textarea still builds', 
   await page.goto('job/broken/build?delay=0sec');
   await page.locator('textarea.build-ui-value').fill('{"x": 42}');
   expect(await submitBuildForm(page, request, 'broken')).toContain('CFG={"x":42}');
+});
+
+test('a form removed while mount is still running gets its signal aborted and its cleanup called', async ({ page, request }) => {
+  await pipelineJob(request, 'slow', `
+    pipeline { agent none
+      parameters { uiParameter(name: 'CFG', runtime: 'none', module: '''
+        export default async function mount({ signal }) {
+          signal.addEventListener('abort', () => { window.__aborted = true })
+          await new Promise((resolve) => setTimeout(resolve, 1500))
+          return () => { window.__cleaned = true }
+        }''') }
+      stages { stage('s') { steps { echo 'ok' } } } }`);
+  await build(request, 'slow');
+  await page.goto('job/slow/build?delay=0sec');
+  await page.locator('.build-ui-root').evaluate((el) => el.closest('[name=parameter]').remove());
+  await expect.poll(() => page.evaluate(() => window.__aborted === true)).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.__cleaned === true), { timeout: 5000 }).toBe(true);
 });
 
 test('the declarative schema-form shows a field only while its condition holds', async ({ page, request }) => {

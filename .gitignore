@@ -8,3 +8,7 @@ node_modules/
 # Local secrets (the repo root has the same safety net; it does not survive graduation)
 .env
 .env.*
+
+# Playwright output
+js/test-results/
+js/playwright-report/
