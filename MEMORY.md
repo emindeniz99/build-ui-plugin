@@ -8,7 +8,9 @@ significant work; prune past ~100 lines. Details: `.claude/skills/memory/SKILL.m
 Feature-complete for 0.1.0 and tested on 2.541.1 and 2.580.1 (59 JenkinsRule,
 18 browser, 11 checker tests): parameter, `input` step, `uiPanel`,
 `schema-form`, `jenkinsRuns`, `gitRefs`, `argoCdApp`, optional approval, the Jenkinsfile
-checker, accessibility checks. Release workflow ready; no tag pushed (owner
+checker, accessibility checks, runtimes `alpine3-csp`, and `alpine3`/`vue3`
+behind `allowEvalRuntimes` (2.541.1 only so far: +9 JenkinsRule, +7 browser,
++1 checker test). Release workflow ready; no tag pushed (owner
 decides). GitHub Actions has run no push-triggered workflow in this repo since
 2026-06-25 and the manual jenkins-ui CI run stayed queued, so neither
 workflow has run on GitHub yet. Firefox and WebKit legs exist only in CI,
@@ -33,6 +35,7 @@ never run locally (only Chromium is installed here). Open items:
 - 2026-10-23: ArgoCD servers are admin config (UI or JCasC); the browser names an app, never a server URL; cache key is URL + credentials + app
 - 2026-10-23: x-git-ref checks run on every path the queue sees, but not on the default value (no job context)
 - 2026-10-23: Dependabot cooldowns are all 7 days, matching pnpm minimumReleaseAge
+- 2026-10-23: alpine3-csp ships like any runtime; alpine3 and vue3 need eval and sit behind allowEvalRuntimes (off) — they break the day CSP is enforced; host.js probes eval in the browser because a proxy may add its own CSP
 
 ## Learnings
 
@@ -53,6 +56,9 @@ never run locally (only Chromium is installed here). Open items:
 - 2026-10-23: Jenkins `--error-color` and `--text-color-secondary` fail 4.5:1 contrast; mix them toward `--text-color` with color-mix
 - 2026-10-23: a parameterized job answers a bare POST /build with 400; use buildWithParameters
 - 2026-10-23: `git commit --only` refuses untracked files; use the git add fallback
+- 2026-10-23: Alpine.start() inits page markup outside the form and never reaches shadow roots; use initTree(root) and destroyTree(root). Alpine.data names are page-global: a later x-if component got the other form's definition
+- 2026-10-23: system property jenkins.security.csp.CspHeader.headerName=Content-Security-Policy-Report-Only beats hpi:run's enforced default and is read per request; set it via scriptText
+- 2026-10-23: pnpm 12 installs before `pnpm run` (verify-deps-before-run); with node_modules symlinked from the main checkout pass --config.verify-deps-before-run=false
 - 2026-10-23: ScriptApproval.configuring() saves to disk on every call and auto-approves when security is off; getPendingScripts() is restricted API
 
 ## Done
