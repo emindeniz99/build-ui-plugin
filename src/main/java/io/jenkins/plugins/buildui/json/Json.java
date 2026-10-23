@@ -6,6 +6,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.json.JsonMapper;
+import java.io.IOException;
 import java.util.Iterator;
 
 /**
@@ -51,6 +52,19 @@ public final class Json {
         }
         checkSize(node, what);
         return node;
+    }
+
+    private static final JsonMapper SERVER_MAPPER = JsonMapper.builder(JsonFactory.builder()
+                    .streamReadConstraints(StreamReadConstraints.builder().maxNestingDepth(256).build())
+                    .build())
+            .build();
+
+    /**
+     * Parses the answer of a server an admin configured (ArgoCD). Callers cap
+     * the byte count; these answers are larger and deeper than form values.
+     */
+    public static JsonNode parseServerAnswer(byte[] bytes) throws IOException {
+        return SERVER_MAPPER.readTree(bytes);
     }
 
     public static String write(JsonNode node) {

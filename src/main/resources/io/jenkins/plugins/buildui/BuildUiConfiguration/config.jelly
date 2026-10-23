@@ -1,0 +1,8 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:f="/lib/form">
+  <f:section title="${%Build UI}">
+    <f:entry title="${%ArgoCD servers}" description="${%Servers whose application status build-ui forms may read through the argoCdApp data provider.}">
+      <f:repeatableProperty field="argoCdServers" add="${%Add ArgoCD server}"/>
+    </f:entry>
+  </f:section>
+</j:jelly>

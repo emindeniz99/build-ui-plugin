@@ -157,6 +157,26 @@ downstream `build` step or a script gets its build refused by the queue. A job
 that has not checked out yet has no refs to compare with, so the check waits
 for its first checkout; `defaultJson` is checked when a build uses it.
 
+`ui.query('argoCdApp', { app: 'web', server: 'default' })` returns the status
+of one ArgoCD application: `name`, `project`, `namespace`, `health`, `sync`,
+`revision`, `operation`, `reconciledAt` and `images`. An admin adds the
+servers under *Manage Jenkins* » *System* » *Build UI*: a name, the URL, a
+*Secret text* credential holding an ArgoCD API token, and a glob of the
+application names forms may read (`*` by default). The browser only names an
+application, so Jenkins contacts only configured servers, and the token never
+leaves the controller. Answers are cached for 10 seconds. With the
+Configuration as Code plugin the same settings live under `unclassified.buildUi`.
+
+```yaml
+unclassified:
+  buildUi:
+    argoCdServers:
+      - name: default
+        url: https://argocd.example.com
+        credentialsId: argocd-token
+        apps: "web-*"
+```
+
 Other plugins can add providers by extending `io.jenkins.plugins.buildui.DataProvider`.
 
 ### Panels on the build page

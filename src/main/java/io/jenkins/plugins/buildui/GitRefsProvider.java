@@ -46,7 +46,6 @@ public class GitRefsProvider extends DataProvider implements RefLookup {
     static final long CACHE_MILLIS = 30_000;
     static final int DEFAULT_LIMIT = 200;
     static final int MAX_LIMIT = 1000;
-    static final int MAX_GLOB_LENGTH = 100;
     private static final Map<String, Cached> CACHE = new ConcurrentHashMap<>();
 
     private record Cached(long at, Map<String, String> refs) {}
@@ -186,20 +185,8 @@ public class GitRefsProvider extends DataProvider implements RefLookup {
                 CredentialsMatchers.withId(id));
     }
 
-    /** Turns a glob ({@code *} any run, {@code ?} one character) into an anchored pattern. */
     static Pattern glob(String glob, String what) {
-        if (glob.length() > MAX_GLOB_LENGTH) {
-            throw new IllegalArgumentException(what + " filter is longer than " + MAX_GLOB_LENGTH + " characters");
-        }
-        StringBuilder regex = new StringBuilder();
-        for (String part : glob.split("(?<=[*?])|(?=[*?])")) {
-            regex.append(switch (part) {
-                case "*" -> ".*";
-                case "?" -> ".";
-                default -> Pattern.quote(part);
-            });
-        }
-        return Pattern.compile(regex.toString(), Pattern.DOTALL);
+        return Globs.compile(glob, what);
     }
 
     private static final Pattern CHUNK = Pattern.compile("\\d+|\\D+");

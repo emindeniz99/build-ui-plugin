@@ -30,7 +30,7 @@ original RFC is issue #94; the design here replaces it where they disagree.
 | Approval of form code | None (owner, 2026-10-23); an approval option may come later if a real need appears | Owner trusts everyone with push access on their Jenkins, and approval adds friction to every form change. |
 | Surfaces, in order | Build with Parameters form, then the `input` step, then panels on the build page (`uiPanel` step). All three are built. | The `input` step is the same form problem; build-page panels are a different product. |
 | Declarative no-JS tier | Built as the `schema-form` runtime, which exports `mount` itself, so a job needs no module | It needs nothing from the core and proves the contract with a second consumer. |
-| Data providers | `DataProvider` extension point; ships `jenkinsRuns` (Item/Read) and `gitRefs` (Item/Build, optional Git plugin) | `gitRefs` takes a job, never a URL, so it cannot be used to reach arbitrary servers (SSRF), and credentials stay on the controller. |
+| Data providers | `DataProvider` extension point; ships `jenkinsRuns` (Item/Read), `gitRefs` (Item/Build, optional Git plugin) and `argoCdApp` (admin-configured servers) | No provider takes a URL from the browser: `gitRefs` takes a job, `argoCdApp` a server name and an app name matched against an admin glob. That rules out SSRF through providers, and credentials stay on the controller. |
 | Parked | TSX through swc4j, Remote DOM worker tier, Web Awesome pack | No current need justifies the cost. |
 
 ## 2. Module contract (Tested)
