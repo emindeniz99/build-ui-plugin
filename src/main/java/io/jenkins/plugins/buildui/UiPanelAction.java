@@ -33,6 +33,16 @@ public class UiPanelAction extends InvisibleAction {
         return data;
     }
 
+    /** Whether the runtime compiles templates with eval; host.js then checks that CSP allows eval. */
+    public boolean isNeedsEval() {
+        return Runtimes.needsEval(runtime);
+    }
+
+    /** False when the runtime needs eval and an admin has not allowed such runtimes. */
+    public boolean isRuntimeAllowed() {
+        return Runtimes.allowed(runtime);
+    }
+
     /** False only when an admin requires approval and this panel's code has none yet. */
     public boolean isApproved() {
         return FormApproval.allowed(runtime, module, html, css, UiParameterDefinition.requestJob(), "panel:" + title);

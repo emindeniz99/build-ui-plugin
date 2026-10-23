@@ -17,8 +17,9 @@ frontend build step.
   the Pipeline `build` step.
 - **Ease test:** a reference form with a conditional field, a multi-select,
   server data and a reusable section fits in about 60 Jenkinsfile lines.
-- **Out of scope for v1:** a component library, renderers that need
-  `unsafe-eval`, TSX, and sandboxing untrusted code.
+- **Out of scope for v1:** a component library, TSX, and sandboxing
+  untrusted code. Renderers that need eval (`alpine3`, `vue3`) ship off by
+  default, behind an admin setting.
 - **Known limit:** with the default settings, anyone who can push a
   Jenkinsfile can run JavaScript in the browser of every user who opens the
   form, admins included. Run it on a Jenkins where you trust everyone with
@@ -29,7 +30,9 @@ frontend build step.
 0.1.0 is ready to release (see [`CHANGELOG.md`](./CHANGELOG.md)); no tag is
 pushed yet. Tested on Jenkins 2.541.1 and 2.580.1: 59 JenkinsRule tests and 18
 browser tests (Chromium) under enforced CSP, plus 11 checker tests. CI also
-runs the browser tests in Firefox and WebKit on 2.580.1. The reference
+runs the browser tests in Firefox and WebKit on 2.580.1. The Alpine and Vue
+runtimes added 9 JenkinsRule tests, 7 browser tests and 1 checker test, run
+on 2.541.1 in Chromium only so far. The reference
 form is [`examples/reference.Jenkinsfile`](./examples/reference.Jenkinsfile)
 (53 lines). Design, measurements and open questions:
 [`docs/design.md`](./docs/design.md).
@@ -82,7 +85,7 @@ registers it; *Build with Parameters* shows the form from the second run on.
 | Field | Meaning |
 |---|---|
 | `name` | Parameter name, as in `params.NAME` |
-| `runtime` | `preact11-htm3` (default), `none` or `schema-form` |
+| `runtime` | `preact11-htm3` (default), `none`, `schema-form` or `alpine3-csp`; `alpine3` and `vue3` only where an admin allows them ([below](#runtimes-that-need-eval-off-by-default)) |
 | `module` | An ES module whose default export is `mount` (not needed for `schema-form`) |
 | `html` | Markup put into the form's root before `mount` runs |
 | `css` | Styles for the form; they apply only inside its shadow root |
@@ -126,6 +129,79 @@ still start. If your module renders custom elements, wait for them with
   checkbox groups, objects as fieldsets. A property with
   `"x-show-if": { "deploy": true }` appears only while its sibling matches, and
   its value is dropped while hidden.
+- `alpine3-csp`: Alpine 3.17.4, CSP build. `runtime` holds `Alpine` and
+  `start(root)`, which starts Alpine inside the form and returns the cleanup.
+  23.3 KB gzipped. Expressions in `html` are property paths and simple calls,
+  without eval; the logic lives in components the module registers with
+  `Alpine.data`, as in the example below.
+
+```groovy
+uiParameter(
+  name: 'DEPLOY',
+  runtime: 'alpine3-csp',
+  defaultJson: '{"branch":"main","deploy":false,"env":"dev"}',
+  html: '''
+<div x-data="deployForm">
+  <label>Branch <input name="branch" x-model="branch"></label>
+  <label><input type="checkbox" name="deploy" x-model="deploy"> Deploy</label>
+  <label x-show="deploy">Environment
+    <select name="env" x-model="env"><option>dev</option><option>prod</option></select>
+  </label>
+</div>''',
+  module: '''
+export default function mount({ root, ui, runtime: { Alpine, start } }) {
+  Alpine.data('deployForm', () => ({
+    ...ui.value,
+    init() { for (const key of ['branch', 'deploy', 'env']) this.$watch(key, () => this.save()) },
+    save() { ui.setValue({ branch: this.branch, deploy: this.deploy, env: this.env }) },
+  }))
+  return start(root)
+}''')
+```
+
+Two rules come from how Alpine works. Return `start(root)` and never call
+`Alpine.start()`: it would start Alpine on the whole Jenkins page, so the
+runtime makes it throw. And `Alpine.data` names are shared by every form on
+the page, so give each form its own names, for example after the parameter.
+
+### Runtimes that need eval (off by default)
+
+`alpine3` (Alpine 3.17.4, 19.4 KB gzipped, same `runtime` as `alpine3-csp`)
+and `vue3` (Vue 3.5.44 with its template compiler, 65.6 KB gzipped, `runtime`
+holds Vue's whole API) turn templates into code with eval. Jenkins's Content
+Security Policy forbids eval. Jenkins sends that policy in report-only mode
+unless an admin enforces it, so these runtimes work today and stop working the
+day an admin enforces CSP. That is why they are off by default.
+
+- An admin allows them with *Allow runtimes that need eval* under Manage
+  Jenkins » System » Build UI, or with Configuration as Code:
+
+  ```yaml
+  unclassified:
+    buildUi:
+      allowEvalRuntimes: true
+  ```
+
+- While the setting is off, a form or panel with such a runtime shows a notice
+  and its JSON field, and Jenkins never sends its code or loads the runtime.
+- With the setting on and CSP enforced, the form says "This form's runtime
+  needs eval, which this Jenkins's Content Security Policy blocks" and shows
+  the JSON field. The runtime file is not loaded.
+- With the setting on and CSP in report-only mode, the form works, and the
+  browser reports each eval to Jenkins as a CSP violation.
+- The plugin never adds `unsafe-eval` to Jenkins's policy.
+- Approval of form code applies to these runtimes as to the others. A form
+  whose runtime is blocked does not reach the pending list.
+
+A Vue form puts its template in `html` and mounts the app on `root`:
+
+```js
+export default function mount({ root, ui, runtime: { createApp } }) {
+  const app = createApp({ data: () => ({ ...ui.value }), watch: { branch(branch) { ui.setValue({ branch }) } } })
+  app.mount(root)
+  return () => app.unmount()
+}
+```
 
 ### Data providers
 
@@ -258,7 +334,7 @@ The checker finds every `uiParameter` and `uiPanel` call and reports, with
 Jenkinsfile line numbers: module syntax errors, `import` statements, a missing
 `export default`, `<script>` and inline handlers in `html`, schema keywords
 the controller rejects, invalid JSON in `schema`, `defaultJson` and `data`,
-and unknown runtimes. It reads string literals only; a field built from
+and unknown runtimes. It warns about runtimes that need eval. It reads string literals only; a field built from
 variables or a `"${…}"` GString gets a warning. It does not check `defaultJson`
 against the schema; the controller does that when a build uses the default.
 

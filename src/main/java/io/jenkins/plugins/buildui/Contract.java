@@ -21,6 +21,8 @@ public final class Contract {
     private static final JsonNode CONTRACT = load();
 
     public static final List<String> RUNTIMES = strings("runtimes");
+    /** Runtimes that compile templates with eval, so enforced CSP stops them. */
+    public static final Set<String> EVAL_RUNTIMES = Set.copyOf(strings("evalRuntimes"));
     public static final Set<String> SCHEMA_ANNOTATIONS = Set.copyOf(strings("schemaAnnotations"));
     /** Sorted, so error messages list the keywords in a stable order. */
     public static final Set<String> SCHEMA_VALIDATIONS = Collections.unmodifiableSortedSet(new TreeSet<>(strings("schemaValidations")));

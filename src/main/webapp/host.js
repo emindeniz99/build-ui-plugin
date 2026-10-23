@@ -15,6 +15,18 @@ baseSheet.replaceSync(`
   .build-ui-error { color: color-mix(in oklch, var(--error-color, #c00) 65%, var(--text-color, #000)); white-space: pre-wrap; }
 `);
 
+// Runtimes marked data-eval compile templates with eval. Enforced CSP blocks it,
+// and Alpine then leaves the form blank with only console warnings, so check
+// once per page before loading one. In report-only mode the check passes and
+// the browser reports it.
+let evalBlocked;
+function blocksEval() {
+  if (evalBlocked === undefined) {
+    try { new Function(''); evalBlocked = false; } catch { evalBlocked = true; }
+  }
+  return evalBlocked;
+}
+
 const runtimes = new Map();
 function loadRuntime(id) {
   if (id === 'none') return Promise.resolve({});
@@ -92,6 +104,9 @@ async function mountOne(el) {
 
   try {
     const { runtime: runtimeId, module: moduleKey, css: cssKey, html: htmlKey } = el.dataset;
+    if (el.dataset.eval === 'true' && blocksEval()) {
+      throw new Error(`This form's runtime ${runtimeId} needs eval, which this Jenkins's Content Security Policy blocks.`);
+    }
     const [runtime, css, html, job] = await Promise.all([
       loadRuntime(runtimeId),
       cssKey ? fetchText(cssKey, signal) : null,

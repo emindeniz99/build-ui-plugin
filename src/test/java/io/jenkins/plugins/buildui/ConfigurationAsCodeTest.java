@@ -60,4 +60,17 @@ class ConfigurationAsCodeTest {
         ConfigurationAsCode.get().configure(file.toString());
         assertTrue(BuildUiConfiguration.get().isRequireApproval());
     }
+
+    @Test
+    void evalRuntimesCanBeAllowedFromYaml(JenkinsRule j, @TempDir Path dir) throws Exception {
+        assertFalse(BuildUiConfiguration.get().isAllowEvalRuntimes(), "eval runtimes must be off unless an admin asks");
+        Path file = dir.resolve("jenkins.yaml");
+        Files.writeString(file, """
+                unclassified:
+                  buildUi:
+                    allowEvalRuntimes: true
+                """);
+        ConfigurationAsCode.get().configure(file.toString());
+        assertTrue(BuildUiConfiguration.get().isAllowEvalRuntimes());
+    }
 }

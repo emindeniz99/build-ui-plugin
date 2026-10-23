@@ -66,6 +66,33 @@ export async function consoleText(request, name, number) {
   return (await request.get(`job/${name}/${number}/consoleText`)).text();
 }
 
+/** Runs Groovy in the script console (hpi:run has security off) and returns what it printed. */
+export async function groovy(request, script) {
+  const res = await request.post('scriptText', { headers: await crumb(request), form: { script } });
+  const text = await res.text();
+  expect(res.ok(), `scriptText: ${res.status()} ${text}`).toBeTruthy();
+  return text.trim();
+}
+
+/** Sets Build UI's allowEvalRuntimes setting; returns the previous value so a test can restore it. */
+export async function allowEvalRuntimes(request, on) {
+  return (await groovy(request, `
+    def c = io.jenkins.plugins.buildui.BuildUiConfiguration.get()
+    print c.allowEvalRuntimes
+    c.allowEvalRuntimes = ${Boolean(on)}`)) === 'true';
+}
+
+// Jenkins reads this system property on every request, before development
+// mode's enforced default, so a test can switch CSP modes without a restart.
+const CSP_HEADER_PROPERTY = 'jenkins.security.csp.CspHeader.headerName';
+
+/** Makes Jenkins send CSP as 'Content-Security-Policy-Report-Only', or restores the default with null. */
+export async function cspHeader(request, name) {
+  await groovy(request, name
+    ? `System.setProperty('${CSP_HEADER_PROPERTY}', '${name}')`
+    : `System.clearProperty('${CSP_HEADER_PROPERTY}')`);
+}
+
 /** Records CSP violations and console errors on a page. */
 export async function watch(page) {
   const problems = [];

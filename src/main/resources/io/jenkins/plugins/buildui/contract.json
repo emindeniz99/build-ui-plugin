@@ -1,5 +1,6 @@
 {
-  "runtimes": ["none", "preact11-htm3", "schema-form"],
+  "runtimes": ["none", "preact11-htm3", "schema-form", "alpine3-csp", "alpine3", "vue3"],
+  "evalRuntimes": ["alpine3", "vue3"],
   "schemaAnnotations": ["$schema", "$id", "$comment", "title", "description", "default", "examples", "readOnly", "writeOnly", "deprecated", "format"],
   "schemaValidations": ["type", "enum", "const", "required", "properties", "additionalProperties", "minProperties", "maxProperties", "items", "minItems", "maxItems", "uniqueItems", "minLength", "maxLength", "pattern", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"],
   "schemaTypes": ["string", "number", "integer", "boolean", "object", "array", "null"],

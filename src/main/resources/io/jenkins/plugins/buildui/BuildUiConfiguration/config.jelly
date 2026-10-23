@@ -4,6 +4,9 @@
     <f:entry field="requireApproval" description="${%Off by default. When on, a form or panel with a module, HTML or CSS shows only a JSON field until an administrator approves its exact code under In-process Script Approval.}">
       <f:checkbox title="${%Require approval of form code}"/>
     </f:entry>
+    <f:entry field="allowEvalRuntimes" description="${%Off by default. Allows runtimes that compile templates with eval, such as vue3 and alpine3. They work only while Jenkins sends its Content Security Policy in report-only mode, and they stop working the day Jenkins enforces it. alpine3-csp, preact11-htm3 and schema-form need no eval.}">
+      <f:checkbox title="${%Allow runtimes that need eval}"/>
+    </f:entry>
     <f:entry title="${%ArgoCD servers}" description="${%Servers whose application status build-ui forms may read through the argoCdApp data provider.}">
       <f:repeatableProperty field="argoCdServers" add="${%Add ArgoCD server}"/>
     </f:entry>
