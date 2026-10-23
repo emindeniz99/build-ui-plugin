@@ -27,8 +27,9 @@ frontend build step.
 ## Status
 
 0.1.0 is ready to release (see [`CHANGELOG.md`](./CHANGELOG.md)); no tag is
-pushed yet. Tested on Jenkins 2.541.1 and 2.580.1: 35 JenkinsRule tests and 8
-browser tests under enforced CSP, plus 10 checker tests. The reference
+pushed yet. Tested on Jenkins 2.541.1 and 2.580.1: 52 JenkinsRule tests and 18
+browser tests (Chromium) under enforced CSP, plus 11 checker tests. CI also
+runs the browser tests in Firefox and WebKit on 2.580.1. The reference
 form is [`examples/reference.Jenkinsfile`](./examples/reference.Jenkinsfile)
 (53 lines). Design, measurements and open questions:
 [`docs/design.md`](./docs/design.md).

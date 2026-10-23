@@ -5,12 +5,15 @@ significant work; prune past ~100 lines. Details: `.claude/skills/memory/SKILL.m
 
 ## Now
 
-Feature-complete for 0.1.0 and tested on 2.541.1 and 2.580.1: parameter,
-`input` step, `uiPanel`, `schema-form`, `jenkinsRuns`, `gitRefs`, the
-Jenkinsfile checker. Release workflow ready; no tag pushed (owner decides).
-GitHub Actions has run no push-triggered workflow in this repo since
+Feature-complete for 0.1.0 and tested on 2.541.1 and 2.580.1 (52 JenkinsRule,
+18 browser, 11 checker tests): parameter, `input` step, `uiPanel`,
+`schema-form`, `jenkinsRuns`, `gitRefs`, `argoCdApp`, the Jenkinsfile
+checker, accessibility checks. Release workflow ready; no tag pushed (owner
+decides). GitHub Actions has run no push-triggered workflow in this repo since
 2026-06-25 and the manual jenkins-ui CI run stayed queued, so neither
-workflow has run on GitHub yet. Open items: `docs/design.md` section 10.
+workflow has run on GitHub yet. Firefox and WebKit legs exist only in CI,
+never run locally (only Chromium is installed here). Open items:
+`docs/design.md` section 10.
 
 ## Decisions
 
@@ -27,6 +30,9 @@ workflow has run on GitHub yet. Open items: `docs/design.md` section 10.
 - 2026-10-23: gitRefs takes a job, never a URL — no SSRF; needs Item/Build
 - 2026-10-23: runtime IDs and schema keywords live in contract.json, read by Java and the checker
 - 2026-10-23: release by tag jenkins-ui-v<semver>; the .hpi goes to GitHub Releases, never git
+- 2026-10-23: ArgoCD servers are admin config (UI or JCasC); the browser names an app, never a server URL; cache key is URL + credentials + app
+- 2026-10-23: x-git-ref checks run on every path the queue sees, but not on the default value (no job context)
+- 2026-10-23: Dependabot cooldowns are all 7 days, matching pnpm minimumReleaseAge
 
 ## Learnings
 
@@ -43,9 +49,14 @@ workflow has run on GitHub yet. Open items: `docs/design.md` section 10.
 - 2026-10-23: Preact 11 runs effect cleanups after render(null) returns; wait before asserting a timer stopped
 - 2026-10-23: Solid 2 html sets prop: bindings before the element is connected; plain custom elements lose them
 - 2026-10-23: the Git plugin refuses file: URLs unless hudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true (tests only)
+- 2026-10-23: Jenkins's "/" search shortcut steals keys from inputs in a shadow root; host.js stops keydown propagation from editable targets
+- 2026-10-23: Jenkins `--error-color` and `--text-color-secondary` fail 4.5:1 contrast; mix them toward `--text-color` with color-mix
+- 2026-10-23: a parameterized job answers a bare POST /build with 400; use buildWithParameters
+- 2026-10-23: `git commit --only` refuses untracked files; use the git add fallback
 
 ## Done
 
+- 2026-10-23: argoCdApp provider, JCasC, accessibility suite, example Jenkinsfiles under e2e, full suites green on 2.541.1 and 2.580.1
 - 2026-10-23: checker CLI, Preact vs Solid 2 comparison, gitRefs provider, release workflow and CHANGELOG for 0.1.0
 - 2026-10-23: plugin built and Phase 0 passed (32 JenkinsRule + 8 browser tests on 2.541.1 and 2.580.1), CI workflow added
 - 2026-10-23: renderer research (16 options, strict CSP), Fable and ChatGPT design reviews, design agreed
