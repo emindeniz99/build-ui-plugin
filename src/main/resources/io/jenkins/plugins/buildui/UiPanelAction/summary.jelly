@@ -1,17 +1,28 @@
 <?jelly escape-by-default='true'?>
-<!-- A uiPanel on the build page. Same markup as the parameter, so host.js mounts it the same way. -->
+<!--
+  A uiPanel on the build page. Same markup as the parameter, so host.js mounts it the same way.
+  Panel code that still waits for approval is never sent; the page shows the panel's data instead.
+-->
 <j:jelly xmlns:j="jelly:core">
   <tr>
     <td colspan="2" class="build-ui-panel">
       <h2>${it.title}</h2>
-      <div class="build-ui-root"
-           data-name="${it.title}"
-           data-runtime="${it.runtime}"
-           data-module="${it.moduleKey}"
-           data-css="${it.cssKey}"
-           data-html="${it.htmlKey}"/>
-      <textarea class="build-ui-value" hidden="hidden" readonly="readonly">${it.data}</textarea>
-      <script type="module" src="${resURL}/plugin/build-ui/host.js"/>
+      <j:choose>
+        <j:when test="${it.approved}">
+          <div class="build-ui-root"
+               data-name="${it.title}"
+               data-runtime="${it.runtime}"
+               data-module="${it.moduleKey}"
+               data-css="${it.cssKey}"
+               data-html="${it.htmlKey}"/>
+          <textarea class="build-ui-value" hidden="hidden" readonly="readonly">${it.data}</textarea>
+          <script type="module" src="${resURL}/plugin/build-ui/host.js"/>
+        </j:when>
+        <j:otherwise>
+          <p class="build-ui-pending">${%The code of this panel waits for approval by an administrator under In-process Script Approval.}</p>
+          <pre class="build-ui-value">${it.data}</pre>
+        </j:otherwise>
+      </j:choose>
     </td>
   </tr>
 </j:jelly>

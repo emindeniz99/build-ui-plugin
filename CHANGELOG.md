@@ -43,6 +43,12 @@ The first release. It needs Jenkins 2.541.1 or newer and Java 17.
 - Examples: a reference form, parallel environment deploys and a release
   form, all run by the browser test suite.
 
-Known limit: there is no approval step for form code. Anyone who can push a
-Jenkinsfile can run JavaScript in the browser of every user who opens the
-form.
+### Approval (optional)
+
+- *Require approval of form code*, off by default: an admin approves each
+  form's exact code under In-process Script Approval before Jenkins sends it
+  to a browser. Until then the form shows its JSON field, and builds keep
+  working. Configuration as Code: `unclassified.buildUi.requireApproval`.
+
+Known limit: with approval off, anyone who can push a Jenkinsfile can run
+JavaScript in the browser of every user who opens the form.

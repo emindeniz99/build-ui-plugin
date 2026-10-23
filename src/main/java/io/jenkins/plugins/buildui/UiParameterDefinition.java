@@ -185,7 +185,7 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
     }
 
     @CheckForNull
-    private static Job<?, ?> requestJob() {
+    static Job<?, ?> requestJob() {
         StaplerRequest2 req = Stapler.getCurrentRequest2();
         return req == null ? null : req.findAncestorObject(Job.class);
     }
@@ -257,6 +257,11 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
     /** The form's initial JSON: the default, or {@code {}}. Used by the view. */
     public String getInitialJson() {
         return defaultJson == null ? "{}" : defaultJson;
+    }
+
+    /** False only when an admin requires approval and this form's code has none yet. */
+    public boolean isApproved() {
+        return FormApproval.allowed(runtime, module, html, css, requestJob(), getName());
     }
 
     /** Content keys for the view; registering here keeps the store filled after a restart. */

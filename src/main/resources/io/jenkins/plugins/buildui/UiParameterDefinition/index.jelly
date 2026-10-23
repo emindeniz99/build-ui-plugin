@@ -2,22 +2,33 @@
 <!--
   Rendered on "Build with Parameters" and on input step forms. The textarea is
   what the form submits; host.js hides it once the job's module has mounted and
-  shows it again, with the error, if mounting fails.
+  shows it again, with the error, if mounting fails. Form code that still waits
+  for approval is never sent: the page shows the textarea and a notice.
 -->
 <j:jelly xmlns:j="jelly:core" xmlns:f="/lib/form">
   <f:entry title="${it.name}" description="${it.formattedDescription}">
     <div name="parameter" class="build-ui">
       <input type="hidden" name="name" value="${it.name}"/>
-      <div class="build-ui-root"
-           data-name="${it.name}"
-           data-job="${it.jobFullName}"
-           data-runtime="${it.runtime}"
-           data-module="${it.moduleKey}"
-           data-css="${it.cssKey}"
-           data-html="${it.htmlKey}"
-           data-schema="${it.schema}"/>
+      <j:set var="approved" value="${it.approved}"/>
+      <j:choose>
+        <j:when test="${approved}">
+          <div class="build-ui-root"
+               data-name="${it.name}"
+               data-job="${it.jobFullName}"
+               data-runtime="${it.runtime}"
+               data-module="${it.moduleKey}"
+               data-css="${it.cssKey}"
+               data-html="${it.htmlKey}"
+               data-schema="${it.schema}"/>
+        </j:when>
+        <j:otherwise>
+          <p class="build-ui-pending">${%The code of this form waits for approval by an administrator under In-process Script Approval. Until then, enter the value as JSON.}</p>
+        </j:otherwise>
+      </j:choose>
       <textarea name="value" class="jenkins-input build-ui-value" rows="6" spellcheck="false">${it.initialJson}</textarea>
-      <script type="module" src="${resURL}/plugin/build-ui/host.js"/>
+      <j:if test="${approved}">
+        <script type="module" src="${resURL}/plugin/build-ui/host.js"/>
+      </j:if>
     </div>
   </f:entry>
 </j:jelly>

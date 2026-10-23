@@ -17,17 +17,17 @@ frontend build step.
   the Pipeline `build` step.
 - **Ease test:** a reference form with a conditional field, a multi-select,
   server data and a reusable section fits in about 60 Jenkinsfile lines.
-- **Out of scope for v1:** approval of form code, a component library,
-  renderers that need `unsafe-eval`, TSX, and sandboxing untrusted code.
-- **Known limit:** v1 has no approval step, so anyone who can push a
+- **Out of scope for v1:** a component library, renderers that need
+  `unsafe-eval`, TSX, and sandboxing untrusted code.
+- **Known limit:** with the default settings, anyone who can push a
   Jenkinsfile can run JavaScript in the browser of every user who opens the
-  form, admins included. Run it only on a Jenkins where you trust everyone
-  with push access.
+  form, admins included. Run it on a Jenkins where you trust everyone with
+  push access, or turn on [approval of form code](#approval-of-form-code-optional).
 
 ## Status
 
 0.1.0 is ready to release (see [`CHANGELOG.md`](./CHANGELOG.md)); no tag is
-pushed yet. Tested on Jenkins 2.541.1 and 2.580.1: 52 JenkinsRule tests and 18
+pushed yet. Tested on Jenkins 2.541.1 and 2.580.1: 59 JenkinsRule tests and 18
 browser tests (Chromium) under enforced CSP, plus 11 checker tests. CI also
 runs the browser tests in Firefox and WebKit on 2.580.1. The reference
 form is [`examples/reference.Jenkinsfile`](./examples/reference.Jenkinsfile)
@@ -194,6 +194,38 @@ uiPanel title: 'Deploy summary', data: '{"env":"staging","services":["api"]}',
 
 `input parameters: [uiParameter(...)]` shows the same form when a run pauses
 for input, and returns the JSON string.
+
+### Approval of form code (optional)
+
+Approval is off by default, and forms run as soon as a Jenkinsfile defines
+them. To review code before it runs in other people's browsers, tick
+*Require approval of form code* under Manage Jenkins » System » Build UI, or
+set it with Configuration as Code:
+
+```yaml
+unclassified:
+  buildUi:
+    requireApproval: true
+```
+
+With approval on:
+
+- A form or panel with a `module`, `html` or `css` shows a notice and the JSON
+  field until an admin approves its exact code under Manage Jenkins »
+  In-process Script Approval, listed as a "Build UI form" script. Jenkins
+  never sends unapproved code to a browser.
+- Builds keep working while code waits: people type the JSON, and the
+  controller validates it against the schema as before.
+- Any change to the runtime, module, HTML or CSS needs a new approval. The
+  pending list holds one entry per form, so a new push replaces the older
+  pending version.
+- A `schema-form` parameter with no module, HTML or CSS needs no approval.
+- The code goes to the pending list the first time someone opens the form.
+  Code an admin denies stays hidden and is not listed again until it changes
+  or Jenkins restarts.
+- Like Groovy scripts, everything counts as approved when Jenkins security is
+  off. With *Force sandbox* on, only an admin opening the form adds it to the
+  pending list.
 
 ### Validation and limits
 

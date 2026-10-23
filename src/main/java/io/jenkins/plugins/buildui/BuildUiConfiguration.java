@@ -13,6 +13,7 @@ import org.kohsuke.stapler.DataBoundSetter;
 public class BuildUiConfiguration extends GlobalConfiguration {
 
     private List<ArgoCdServer> argoCdServers = new ArrayList<>();
+    private boolean requireApproval;
 
     public BuildUiConfiguration() {
         load();
@@ -29,6 +30,17 @@ public class BuildUiConfiguration extends GlobalConfiguration {
     @DataBoundSetter
     public void setArgoCdServers(List<ArgoCdServer> argoCdServers) {
         this.argoCdServers = argoCdServers == null ? new ArrayList<>() : new ArrayList<>(argoCdServers);
+        save();
+    }
+
+    /** Off by default: forms run as soon as a Jenkinsfile defines them. See {@link FormApproval}. */
+    public boolean isRequireApproval() {
+        return requireApproval;
+    }
+
+    @DataBoundSetter
+    public void setRequireApproval(boolean requireApproval) {
+        this.requireApproval = requireApproval;
         save();
     }
 

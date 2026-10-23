@@ -1,6 +1,9 @@
 <?jelly escape-by-default='true'?>
 <j:jelly xmlns:j="jelly:core" xmlns:f="/lib/form">
   <f:section title="${%Build UI}">
+    <f:entry field="requireApproval" description="${%Off by default. When on, a form or panel with a module, HTML or CSS shows only a JSON field until an administrator approves its exact code under In-process Script Approval.}">
+      <f:checkbox title="${%Require approval of form code}"/>
+    </f:entry>
     <f:entry title="${%ArgoCD servers}" description="${%Servers whose application status build-ui forms may read through the argoCdApp data provider.}">
       <f:repeatableProperty field="argoCdServers" add="${%Add ArgoCD server}"/>
     </f:entry>

@@ -27,7 +27,7 @@ original RFC is issue #94; the design here replaces it where they disagree.
 | Later runtimes | `solid2-html` not planned: it lost the comparison in section 7 | Four times larger, and breaks plain custom elements even when they are defined first. |
 | Eval runtimes (Vue, Alpine) | Only behind a global admin setting, off by default | Jenkins runs CSP in report-only mode by default, so these would work for months and break on the day an admin enforces CSP. |
 | Component library | None in v1; packs (Web Awesome and others) stay possible later | Both motivating forms need inputs, checkboxes and cards only. |
-| Approval of form code | None (owner, 2026-10-23); an approval option may come later if a real need appears | Owner trusts everyone with push access on their Jenkins, and approval adds friction to every form change. |
+| Approval of form code | An admin setting, off by default (owner, 2026-10-23), built on script-security | The owner trusts everyone with push access and wants no friction by default; other Jenkins setups can opt in. |
 | Surfaces, in order | Build with Parameters form, then the `input` step, then panels on the build page (`uiPanel` step). All three are built. | The `input` step is the same form problem; build-page panels are a different product. |
 | Declarative no-JS tier | Built as the `schema-form` runtime, which exports `mount` itself, so a job needs no module | It needs nothing from the core and proves the contract with a second consumer. |
 | Data providers | `DataProvider` extension point; ships `jenkinsRuns` (Item/Read), `gitRefs` (Item/Build, optional Git plugin) and `argoCdApp` (admin-configured servers) | No provider takes a URL from the browser: `gitRefs` takes a job, `argoCdApp` a server name and an app name matched against an admin glob. That rules out SSRF through providers, and credentials stay on the controller. |
@@ -85,10 +85,10 @@ Five roles meet on the form page:
 | Viewer | Opens *Build with Parameters*; the module runs with the viewer's session and permissions |
 | Admin viewer | Same as a viewer, but the session can change Jenkins itself |
 | Controller | Validates values, serves modules, answers `ui.query` with the viewer's permissions |
-| Approver | Does not exist in v1 |
+| Approver | An admin; exists only when *Require approval of form code* is on |
 
-**Accepted risk in v1:** a Jenkinsfile author can run JavaScript as any viewer,
-including an admin. In a multibranch job this covers branch and PR authors
+**Accepted risk with the default settings:** a Jenkinsfile author can run
+JavaScript as any viewer, including an admin. In a multibranch job this covers branch and PR authors
 with push access, because a build writes the Jenkinsfile's parameters into the
 job's configuration (Assumption: the design review cites JENKINS-41929; we
 have not reproduced it). Loading
@@ -100,15 +100,33 @@ Jenkins origin.
 when a module loads a same-origin file that someone else controls, such as a
 workspace file. A module that wants to do harm needs no such file.
 
-**Possible later addition, not planned:** an approval option built on script-security.
-`Language` is an extension point with two abstract methods,
-`ScriptApproval.configuring()` puts unapproved code in the pending list, and
-`using()` throws `UnapprovedUsageException` (Fact,
-[Language](https://javadoc.jenkins.io/plugin/script-security/org/jenkinsci/plugins/scriptsecurity/scripts/Language.html),
-[ScriptApproval](https://javadoc.jenkins.io/plugin/script-security/org/jenkinsci/plugins/scriptsecurity/scripts/ScriptApproval.html)).
-The approved set would cover what runs in other people's browsers: runtime,
-module, HTML, CSS and data sources. Schema and defaults only affect the build,
-which the author controls anyway, so they would be validated but not approved.
+**Optional approval (Tested, `FormApprovalTest`).** An admin turns it on with
+`BuildUiConfiguration.requireApproval`; it is off by default. The plugin
+registers a script-security `Language` named `build-ui` and asks
+`ScriptApproval` about one text per form: the runtime, module, HTML and CSS,
+which is everything that runs in other people's browsers. Schema and defaults
+only affect the build, which the author controls anyway, so the controller
+validates them and nobody approves them. Choices and the facts behind them:
+
+- The check runs when Jenkins renders the form or panel. An unapproved form
+  gets no `build-ui-root` and no `host.js`, so its code never reaches the
+  content store or a browser, and the JSON textarea still submits.
+- `configuring()` saves `scriptApproval.xml` on every call, and
+  `getPendingScripts()` is restricted API (Fact: the access-modifier checker
+  rejected it). The plugin remembers, per form, the hash of the code it last
+  submitted (at most 2000 forms, in memory), so page views do not write to
+  disk. Denied code therefore stays off the pending list until it changes or
+  Jenkins restarts.
+- The approval context key is the job's full name plus the form name.
+  script-security drops an older pending entry with the same key, so the list
+  holds one entry per form.
+- `configuring()` approves without asking when Jenkins security is off, and
+  skips the pending list for a non-admin under *Force sandbox* (Fact: read in
+  the bytecode of script-security 1412 and 1436). The plugin keeps both
+  behaviours to match Groovy approval.
+- Data sources are not part of the approved text: providers check the
+  viewer's permissions on every query, and an admin configures the ArgoCD
+  servers.
 
 ## 4. CSP and module serving (Tested)
 
@@ -291,8 +309,10 @@ JenkinsRule tests, 8 browser tests).
 ## 10. Not built yet
 
 - Eval-based runtimes behind an admin setting (none ships, so no setting yet).
-- An approval step and a sandbox for untrusted code (Remote DOM): declined by
-  the owner for now.
+- A sandbox for untrusted code (Remote DOM): declined by the owner for now.
+- A browser test of approval: `hpi:run` runs without security, where
+  script-security approves everything, so `FormApprovalTest` covers approval
+  through JenkinsRule pages instead.
 - A release: the workflow and `CHANGELOG.md` exist, and a local rehearsal of
   its steps built `build-ui.hpi` 0.1.0, but no tag is pushed yet.
 - Firefox and WebKit runs: CI runs them on the current LTS line, but this

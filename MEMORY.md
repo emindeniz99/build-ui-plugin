@@ -5,9 +5,9 @@ significant work; prune past ~100 lines. Details: `.claude/skills/memory/SKILL.m
 
 ## Now
 
-Feature-complete for 0.1.0 and tested on 2.541.1 and 2.580.1 (52 JenkinsRule,
+Feature-complete for 0.1.0 and tested on 2.541.1 and 2.580.1 (59 JenkinsRule,
 18 browser, 11 checker tests): parameter, `input` step, `uiPanel`,
-`schema-form`, `jenkinsRuns`, `gitRefs`, `argoCdApp`, the Jenkinsfile
+`schema-form`, `jenkinsRuns`, `gitRefs`, `argoCdApp`, optional approval, the Jenkinsfile
 checker, accessibility checks. Release workflow ready; no tag pushed (owner
 decides). GitHub Actions has run no push-triggered workflow in this repo since
 2026-06-25 and the manual jenkins-ui CI run stayed queued, so neither
@@ -20,7 +20,7 @@ never run locally (only Chromium is installed here). Open items:
 - 2026-10-23: plugin ID `build-ui`, Jenkinsfile symbol `uiParameter` — every planned surface belongs to a run
 - 2026-10-23: minimum Jenkins 2.541.1, Java 17 — oldest LTS line with core CSP
 - 2026-10-23: v1 runtimes `none` + `preact11-htm3`; Solid 2 after its stable release — RC is not a production dependency
-- 2026-10-23: no approval of form code (owner) — owner trusts everyone with push access and wants no friction; approval maybe later, not planned
+- 2026-10-23: approval of form code is an admin setting, off by default (owner: "not mandatory, keep it usable as before") — built on script-security, one pending entry per form
 - 2026-10-23: design lives in `docs/design.md`, not in issue #94 — the issue stays behind at graduation
 - 2026-10-23: commits go straight to `main`, no PRs (owner)
 - 2026-10-23: content endpoint checks Overall/Read, not job Read — one key serves form, input step and panels
@@ -53,6 +53,7 @@ never run locally (only Chromium is installed here). Open items:
 - 2026-10-23: Jenkins `--error-color` and `--text-color-secondary` fail 4.5:1 contrast; mix them toward `--text-color` with color-mix
 - 2026-10-23: a parameterized job answers a bare POST /build with 400; use buildWithParameters
 - 2026-10-23: `git commit --only` refuses untracked files; use the git add fallback
+- 2026-10-23: ScriptApproval.configuring() saves to disk on every call and auto-approves when security is off; getPendingScripts() is restricted API
 
 ## Done
 

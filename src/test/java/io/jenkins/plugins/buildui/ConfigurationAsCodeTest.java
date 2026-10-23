@@ -1,6 +1,7 @@
 package io.jenkins.plugins.buildui;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.jenkins.plugins.casc.ConfigurationAsCode;
@@ -45,5 +46,18 @@ class ConfigurationAsCodeTest {
         CNode exported = registry.lookupOrFail(BuildUiConfiguration.class).describe(BuildUiConfiguration.get(), context);
         String text = exported.toString();
         assertTrue(text.contains("argocd.example.com") && text.contains("web-*"), text);
+    }
+
+    @Test
+    void approvalCanBeRequiredFromYaml(JenkinsRule j, @TempDir Path dir) throws Exception {
+        assertFalse(BuildUiConfiguration.get().isRequireApproval(), "approval must be off unless an admin asks");
+        Path file = dir.resolve("jenkins.yaml");
+        Files.writeString(file, """
+                unclassified:
+                  buildUi:
+                    requireApproval: true
+                """);
+        ConfigurationAsCode.get().configure(file.toString());
+        assertTrue(BuildUiConfiguration.get().isRequireApproval());
     }
 }

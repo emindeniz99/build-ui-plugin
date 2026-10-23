@@ -33,6 +33,11 @@ public class UiPanelAction extends InvisibleAction {
         return data;
     }
 
+    /** False only when an admin requires approval and this panel's code has none yet. */
+    public boolean isApproved() {
+        return FormApproval.allowed(runtime, module, html, css, UiParameterDefinition.requestJob(), "panel:" + title);
+    }
+
     public String getModuleKey() {
         return module == null ? null : ContentStore.put(module, "mjs", "text/javascript;charset=UTF-8");
     }
