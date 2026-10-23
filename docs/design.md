@@ -24,7 +24,7 @@ original RFC is issue #94; the design here replaces it where they disagree.
 | Jenkins / Java | Minimum 2.541.1, Java 17 bytecode; CI covers 2.541.x and the current LTS | 2.541 is the oldest LTS line with core CSP. |
 | Core | Framework-agnostic; knows only the `mount` contract (section 2) | A runtime can come and go without a core rewrite. |
 | v1 runtimes | `none` and `preact11-htm3` | One stable React-style renderer plus plain JS. |
-| Later runtimes | `solid2-html` once Solid 2.0 ships stable and wins the comparison in section 7 | It passes strict CSP as an RC; an RC is not a production dependency. |
+| Later runtimes | `solid2-html` not planned: it lost the comparison in section 7 | Four times larger, and breaks plain custom elements even when they are defined first. |
 | Eval runtimes (Vue, Alpine) | Only behind a global admin setting, off by default | Jenkins runs CSP in report-only mode by default, so these would work for months and break on the day an admin enforces CSP. |
 | Component library | None in v1; packs (Web Awesome and others) stay possible later | Both motivating forms need inputs, checkboxes and cards only. |
 | Approval of form code | None (owner, 2026-10-23); an approval option may come later if a real need appears | Owner trusts everyone with push access on their Jenkins, and approval adds friction to every form change. |
@@ -221,14 +221,47 @@ turns it on, since 2.539
 ([CSP](https://www.jenkins.io/doc/book/security/csp/)). htm's last release is
 3.1.1 from October 2022. `@jsonforms/vanilla-renderers` 3.8.0 requires React.
 
-## 7. Solid 2.0 comparison (Proposal)
+## 7. Solid 2.0 comparison (Measured)
 
-Before `solid2-html` ships, Preact and Solid build the same complex form and
-we compare: conditional fields, nested state, async data, multi-select
-arrays, custom element upgrade timing, custom events and property binding,
-removing components, cleanup, CSP, bundle size, start-up time, and how much
-code the author writes. Size alone decides nothing. The custom elements are
-small test elements of our own, not a component library.
+Preact 11.0.1 + htm 3.1.1 and Solid 2.0.0-rc.15 + `@solidjs/html` built the
+same form (`js/lab/pages/cmp-*.mjs`, run with `js/lab/run-compare.mjs` under
+Jenkins's CSP, 5 runs, same result each time). The form has a conditional
+nested section, server data arriving after 100 ms, a keyed list with add and
+remove, an interval cleaned up on unmount, and `<x-chips>`, a small custom
+element of our own with array properties `options` and `value` and a
+`chips-change` event, defined 300 ms after the page loads.
+
+| Mode | Preact | Solid 2 |
+|---|---|---|
+| Plain element, form renders at once | fails: chips never show, value stays `["api"]` | fails the same way |
+| Plain element, module waits for `customElements.whenDefined` | **passes** | fails the same way |
+| Element that re-applies properties set before its upgrade (as Lit-based elements do), renders at once | fails | **passes** |
+| Conditional section, nested state, list add/remove, final JSON | passes in every mode | passes in every mode |
+| Cleanup (DOM emptied, interval cleared) | passes | passes |
+| CSP violations | none | none |
+| App + runtime, minified, gzip | 7.2 KB | 30.4 KB |
+| App code, non-comment lines | 33 | 39 |
+
+Why the custom element results differ:
+
+- Preact sets a property only if the element already has it (`name in dom`).
+  On an element not yet defined it writes an attribute, so the array becomes
+  the string `"api"` and the element never sees it. Waiting for the
+  definition fixes it, which is the module's job under the contract.
+- Solid 2's `html` sets `prop:` bindings on the element before it joins the
+  page. Even with the element defined first, `options` and `value` land as
+  own properties of the instance and hide the class's setters. Waiting does
+  not help; only an element that re-applies such properties in its
+  constructor works.
+- Preact 11 runs `useEffect` cleanups shortly after `render(null, root)`
+  returns, not inside it (12 of 12 runs). A probe that checked the timer
+  right after unmount mistook this for a leak 1 to 5 times in 10.
+
+Conclusion: `preact11-htm3` stays the default. Solid 2 is four times larger
+and breaks plain custom elements in a way a module cannot work around by
+waiting, so the comparison gives no reason to ship `solid2-html`. Revisit
+when Solid 2.0 is stable and its `html` sets properties after insertion, or
+when a real form needs fine-grained updates that Preact cannot keep fast.
 
 ## 8. Assumptions
 
@@ -257,7 +290,6 @@ JenkinsRule tests, 8 browser tests).
 
 ## 10. Not built yet
 
-- The Preact and Solid 2 comparison in section 7.
 - Eval-based runtimes behind an admin setting (none ships, so no setting yet).
 - A Git refs data provider.
 - A release: there is no tag and no `.hpi` on GitHub Releases yet.

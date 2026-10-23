@@ -10,6 +10,7 @@ pnpm --dir projects/jenkins-ui/js lab          # serves http://127.0.0.1:4321
 node projects/jenkins-ui/js/lab/run3.mjs       # all ex-* pages, strict CSP and CSP off
 node projects/jenkins-ui/js/lab/run4.mjs       # eval probe: enforced, report-only, off
 node projects/jenkins-ui/js/lab/run5.mjs       # style, import and inline-handler probes
+node projects/jenkins-ui/js/lab/run-compare.mjs  # Preact vs Solid 2 on one complex form
 ```
 
 Open a page by hand at `/page/<name>`, for example `/page/ex-preact-htm`.
