@@ -1,0 +1,27 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:f="/lib/form">
+  <f:entry title="${%Name}" field="name">
+    <f:textbox/>
+  </f:entry>
+  <f:entry title="${%Description}" field="description">
+    <f:textarea/>
+  </f:entry>
+  <f:entry title="${%Runtime}" field="runtime">
+    <f:select default="preact11-htm3"/>
+  </f:entry>
+  <f:entry title="${%Module}" field="module">
+    <f:textarea/>
+  </f:entry>
+  <f:entry title="${%HTML}" field="html">
+    <f:textarea/>
+  </f:entry>
+  <f:entry title="${%CSS}" field="css">
+    <f:textarea/>
+  </f:entry>
+  <f:entry title="${%JSON Schema}" field="schema">
+    <f:textarea checkMethod="post"/>
+  </f:entry>
+  <f:entry title="${%Default value}" field="defaultJson">
+    <f:textarea checkMethod="post" checkDependsOn="schema"/>
+  </f:entry>
+</j:jelly>
