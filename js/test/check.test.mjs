@@ -178,3 +178,38 @@ test('the CLI fails a file in which it found nothing to check', () => {
   assert.doesNotMatch(r.stdout, /no errors/);
   assert.match(r.stdout, /js\/package\.json:1:1: warning: no uiParameter or uiPanel call found/);
 });
+
+test('schema shapes the controller rejects when the job is configured are errors here too', async () => {
+  const p = await checkSource(`uiParameter(name: 'C', runtime: 'schema-form', schema: '''{
+    "type": "object", "required": "a", "maxProperties": "2",
+    "properties": {
+      "a": {"enum": []},
+      "b": {"type": "string", "pattern": "("},
+      "c": {"type": "array", "uniqueItems": "yes", "items": {"properties": []}}
+    }}''')`);
+  assert.deepEqual(errors(p).map((x) => x.message.replace(/^uiParameter 'C': /, '')), [
+    'schema: required must be an array of names',
+    'schema: maxProperties must be a number',
+    'schema at /properties/a: enum must be a non-empty array',
+    'schema at /properties/c: uniqueItems must be a boolean',
+    'schema at /properties/c/items: properties must be an object',
+  ]);
+  // Java and JavaScript regex syntax differ, so a pattern JavaScript cannot compile is only a warning.
+  assert.deepEqual(p.filter((x) => x.level === 'warning').map((x) => x.message.split(';')[0]),
+    ["uiParameter 'C': schema at /properties/b: pattern does not compile as a JavaScript regular expression"]);
+});
+
+test('JSON the controller refuses is an error: duplicate keys, nesting and size limits', async () => {
+  const deep = '['.repeat(33) + ']'.repeat(33);
+  const wide = JSON.stringify(Array.from({ length: 1001 }, () => 0));
+  const p = errors(await checkSource(`
+    uiParameter(name: 'C', module: 'export default () => {}', defaultJson: '{"a": 1, "b": {"a": 2}, "a": 3}')
+    uiPanel(title: 'D', data: '${deep}', module: 'export default () => {}')
+    uiPanel(title: 'W', data: '${wide}', module: 'export default () => {}')
+    uiPanel(title: 'OK', data: '${'['.repeat(32) + ']'.repeat(32)}', module: 'export default () => {}')`));
+  assert.deepEqual(p.map((x) => x.message), [
+    "uiParameter 'C': defaultJson has the key \"a\" twice in one object",
+    "uiPanel 'D': data is nested deeper than 32 levels",
+    "uiPanel 'W': data has an array with 1001 items; the limit is 1000",
+  ]);
+});

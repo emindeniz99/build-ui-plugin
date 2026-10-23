@@ -156,42 +156,110 @@ const columnOf = (src, offset) => offset - src.lastIndexOf('\n', offset - 1);
 
 // ---- checks -------------------------------------------------------------
 
+const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+// Mirrors Schema.check in the controller, which rejects these when the job is configured.
 function checkSchema(schema, at, report) {
   if (typeof schema === 'boolean') return;
-  if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) {
-    report('error', `schema${at ? ' at ' + at : ''}: a schema must be an object or a boolean`);
+  const where = `schema${at ? ' at ' + at : ''}`;
+  if (!isObject(schema)) {
+    report('error', `${where}: a schema must be an object or a boolean`);
     return;
   }
   for (const [key, value] of Object.entries(schema)) {
     if (key === 'x-git-ref' && value !== true && !['branch', 'tag', 'any'].includes(value)) {
-      report('error', `schema${at ? ' at ' + at : ''}: x-git-ref must be true, "branch", "tag" or "any"`);
+      report('error', `${where}: x-git-ref must be true, "branch", "tag" or "any"`);
     }
     if (contract.schemaAnnotations.includes(key) || key.startsWith('x-')) continue;
     if (!contract.schemaValidations.includes(key)) {
-      report('error', `schema${at ? ' at ' + at : ''}: keyword '${key}' is not supported; supported: ${contract.schemaValidations.join(', ')}`);
+      report('error', `${where}: keyword '${key}' is not supported; supported: ${contract.schemaValidations.join(', ')}`);
       continue;
     }
     if (key === 'type') {
       for (const t of [].concat(value)) {
-        if (!contract.schemaTypes.includes(t)) report('error', `schema${at ? ' at ' + at : ''}: unknown type ${JSON.stringify(t)}`);
+        if (!contract.schemaTypes.includes(t)) report('error', `${where}: unknown type ${JSON.stringify(t)}`);
       }
-    } else if (key === 'properties' && value && typeof value === 'object') {
-      for (const [name, sub] of Object.entries(value)) checkSchema(sub, `${at}/properties/${name}`, report);
+    } else if (key === 'enum') {
+      if (!Array.isArray(value) || value.length === 0) report('error', `${where}: enum must be a non-empty array`);
+    } else if (key === 'required') {
+      if (!Array.isArray(value) || value.some((n) => typeof n !== 'string')) report('error', `${where}: required must be an array of names`);
+    } else if (key === 'properties') {
+      if (!isObject(value)) report('error', `${where}: properties must be an object`);
+      else for (const [name, sub] of Object.entries(value)) checkSchema(sub, `${at}/properties/${name}`, report);
     } else if (key === 'items' || key === 'additionalProperties') {
       checkSchema(value, `${at}/${key}`, report);
-    } else if (key === 'pattern' && typeof value === 'string' && value.length > contract.maxPatternLength) {
-      report('error', `schema${at ? ' at ' + at : ''}: pattern is longer than ${contract.maxPatternLength}`);
+    } else if (key === 'pattern') {
+      if (typeof value !== 'string') report('error', `${where}: pattern must be a string`);
+      else if (value.length > contract.maxPatternLength) report('error', `${where}: pattern is longer than ${contract.maxPatternLength}`);
+      else {
+        // The controller compiles a Java regex; JavaScript rejects some valid Java syntax, such as (?i), so this only warns.
+        try { new RegExp(value); } catch (e) {
+          report('warning', `${where}: pattern does not compile as a JavaScript regular expression; the controller rejects it if Java cannot compile it either (${e.message})`);
+        }
+      }
+    } else if (key === 'uniqueItems') {
+      if (typeof value !== 'boolean') report('error', `${where}: uniqueItems must be a boolean`);
+    } else if (key !== 'const' && typeof value !== 'number') {
+      report('error', `${where}: ${key} must be a number`);
     }
   }
 }
 
+// The controller's limits (Json.java); a value over them is refused when the job is configured or run.
+const JSON_MAX_CHARS = 256 * 1024;
+const JSON_MAX_DEPTH = 32;
+const JSON_MAX_ITEMS = 1000;
+
 function parseJson(field, text, report) {
+  if (text.length > JSON_MAX_CHARS) {
+    report('error', `${field} is ${text.length} characters; the limit is ${JSON_MAX_CHARS}`);
+    return undefined;
+  }
+  let value;
   try {
-    return JSON.parse(text);
+    value = JSON.parse(text);
   } catch (e) {
     report('error', `${field} is not valid JSON: ${e.message}`);
     return undefined;
   }
+  // JSON.parse keeps the last of two equal keys and has no depth limit; scan the (valid) text for both.
+  const open = [];
+  let depth = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '{' || c === '[') {
+      open.push(c === '{' ? new Set() : null);
+      depth = Math.max(depth, open.length);
+    } else if (c === '}' || c === ']') {
+      open.pop();
+    } else if (c === '"') {
+      let j = i + 1;
+      while (text[j] !== '"') j += text[j] === '\\' ? 2 : 1;
+      let k = j + 1;
+      while (/\s/.test(text[k] ?? '')) k++;
+      const keys = open[open.length - 1];
+      if (keys && text[k] === ':') {
+        const key = JSON.parse(text.slice(i, j + 1));
+        if (keys.has(key)) report('error', `${field} has the key ${JSON.stringify(key)} twice in one object`);
+        keys.add(key);
+      }
+      i = j;
+    }
+  }
+  if (depth > JSON_MAX_DEPTH) {
+    report('error', `${field} is nested deeper than ${JSON_MAX_DEPTH} levels`);
+    return undefined;
+  }
+  const count = (v) => {
+    if (Array.isArray(v) && v.length > JSON_MAX_ITEMS) {
+      report('error', `${field} has an array with ${v.length} items; the limit is ${JSON_MAX_ITEMS}`);
+    } else if (isObject(v) && Object.keys(v).length > JSON_MAX_ITEMS) {
+      report('error', `${field} has an object with ${Object.keys(v).length} properties; the limit is ${JSON_MAX_ITEMS}`);
+    }
+    if (v !== null && typeof v === 'object') Object.values(v).forEach(count);
+  };
+  count(value);
+  return value;
 }
 
 async function checkModule(text, report, reportAt) {
