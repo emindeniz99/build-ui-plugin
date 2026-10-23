@@ -28,10 +28,11 @@ original RFC is issue #94; the design here replaces it where they disagree.
 | Eval runtimes (Vue, Alpine) | Only behind a global admin setting, off by default | Jenkins runs CSP in report-only mode by default, so these would work for months and break on the day an admin enforces CSP. |
 | Component library | None in v1; packs (Web Awesome and others) stay possible later | Both motivating forms need inputs, checkboxes and cards only. |
 | Approval of form code | An admin setting, off by default (owner, 2026-10-23), built on script-security | The owner trusts everyone with push access and wants no friction by default; other Jenkins setups can opt in. |
+| Sandbox for form code | Opt-in: `sandbox: true` on `uiParameter` and `uiPanel`, or the admin setting *Run all form code in a sandbox* (`sandboxAll`, JCasC). Off by default. The code renders in `<iframe sandbox="allow-scripts">` (owner, 2026-10-23: isolated iframe, not DOM mirroring). Section 12. | An opaque-origin frame has no cookies, no Jenkins API and no access to the page, and needs no change to Jenkins's CSP. Mirroring a worker's DOM into the page would need a renderer of our own and is not built. |
 | Surfaces, in order | Build with Parameters form, then the `input` step, then panels on the build page (`uiPanel` step). All three are built. | The `input` step is the same form problem; build-page panels are a different product. |
 | Declarative no-JS tier | Built as the `schema-form` runtime, which exports `mount` itself, so a job needs no module | It needs nothing from the core and proves the contract with a second consumer. |
 | Data providers | `DataProvider` extension point; ships `jenkinsRuns` (Item/Read), `gitRefs` (Item/Build, optional Git plugin) and `argoCdApp` (admin-configured servers) | No provider takes a URL from the browser: `gitRefs` takes a job, `argoCdApp` a server name and an app name matched against an admin glob. That rules out SSRF through providers, and credentials stay on the controller. |
-| Parked | TSX through swc4j, Remote DOM worker tier, Web Awesome pack | No current need justifies the cost. |
+| Parked | TSX through swc4j, Remote DOM (a worker whose DOM the page mirrors), Web Awesome pack | No current need justifies the cost; the iframe sandbox covers isolation. |
 
 ## 2. Module contract (Tested)
 
@@ -87,6 +88,9 @@ Five roles meet on the form page:
 | Controller | Validates values, serves modules, answers `ui.query` with the viewer's permissions |
 | Approver | An admin; exists only when *Require approval of form code* is on |
 
+A sandboxed form (section 12) changes the first row: its code runs in an
+opaque-origin frame and acts as the viewer only through `ui.query`.
+
 **Accepted risk with the default settings:** a Jenkinsfile author can run
 JavaScript as any viewer, including an admin. In a multibranch job this covers branch and PR authors
 with push access, because a build writes the Jenkinsfile's parameters into the
@@ -127,6 +131,12 @@ validates them and nobody approves them. Choices and the facts behind them:
 - Data sources are not part of the approved text: providers check the
   viewer's permissions on every query, and an admin configures the ArgoCD
   servers.
+- A sandboxed form's text starts with `// build-ui form, runtime <id>,
+  sandboxed`. An admin may approve code because the sandbox limits it, so
+  that approval does not cover the same code once its Jenkinsfile drops
+  `sandbox: true`. The reverse holds: a sandboxed form also counts as
+  approved when its page text is approved, so turning the sandbox on costs
+  no second approval (Tested, `FormApprovalTest`).
 
 ## 4. CSP and module serving (Tested)
 
@@ -309,7 +319,12 @@ JenkinsRule tests, 8 browser tests).
 ## 10. Not built yet
 
 - Eval-based runtimes behind an admin setting (none ships, so no setting yet).
-- A sandbox for untrusted code (Remote DOM): declined by the owner for now.
+- Sandboxed forms in Firefox and WebKit, and on Jenkins 2.580.1: the sandbox
+  tests have run only in Chromium on 2.541.1.
+- Exfiltration from a sandboxed frame through channels Jenkins's CSP does
+  not cover (WebRTC, DNS prefetch): not tested, not claimed.
+- Live theme changes in a sandboxed frame: the host copies the theme once,
+  when the frame loads.
 - A browser test of approval: `hpi:run` runs without security, where
   script-security approves everything, so `FormApprovalTest` covers approval
   through JenkinsRule pages instead.
@@ -336,6 +351,93 @@ serving plugins for it (about a year back), or when a needed API is newer.
 Java follows the baseline. CI always tests the minimum line and the current
 LTS line. Every raise goes in `CHANGELOG.md`.
 
-Size budgets (gzip): host 3 KB, `preact11-htm3` 8 KB, `schema-form` 9 KB.
-`pnpm vendor:check` fails past a budget, so growth past it is a decision
-taken in the commit that raises it. Today: 2.3, 6.7 and 7.3 KB.
+Size budgets (gzip): host 4 KB, sandbox boot script 2 KB, `preact11-htm3`
+8 KB, `schema-form` 9 KB. `pnpm vendor:check` fails past a budget, so growth
+past it is a decision taken in the commit that raises it. Today: 3.3, 1.6,
+6.7 and 7.3 KB. The host budget went from 3 to 4 KB with the sandbox, whose
+frame setup and message handling added 1 KB to `host.js`.
+
+## 12. Sandboxed forms (Tested)
+
+`SandboxTest` (JenkinsRule) covers the endpoints; `js/e2e/sandbox.spec.mjs`
+(Chromium, Jenkins 2.541.1) covers the browser side.
+
+### Mechanism
+
+1. The view marks the root `data-sandbox="true"` when the form asks for it
+   or `sandboxAll` is on, and the form has a module, HTML or CSS. A
+   `schema-form` without HTML or CSS runs only the plugin's code and stays
+   on the page. Approval (section 3) decides first whether the root exists.
+2. `host.js` fetches the HTML and CSS as before and adds
+   `<iframe sandbox="allow-scripts" title="<form name>">` to the shadow root.
+   Its `src` is `/build-ui/frame?runtime=<id>&module=<key>`, a page of
+   `BuildUiAction` with the same Overall/Read check as the content endpoint.
+3. The frame endpoint checks that the runtime exists and the module key is
+   in `ContentStore`, mints a token and answers a document with no form code:
+   a boot script tag and the module's one-time URL in `data-module`. It sends
+   `Cache-Control: no-store`, so the browser never reuses a spent token.
+4. `SandboxAction` (`/build-ui-sandbox/`, an `UnprotectedRootAction`) serves,
+   with `Access-Control-Allow-Origin: *`, the boot script and the runtime
+   bundles from a fixed list (the request path is only a key into that list)
+   and `module/<token>.mjs`.
+5. Tokens (`SandboxTokens`): 128 random bits from `SecureRandom`, bound to one
+   content key, used up by the first request, valid for 60 s, at most
+   10 000 held (the oldest goes first). The content key itself never reaches
+   the frame.
+6. On the iframe's `load` event the host posts one message,
+   `build-ui:init`, with the name, job, schema, current value, HTML, CSS and
+   theme, and transfers a `MessagePort`. The host never listens to `window`
+   messages; it reads only that port.
+7. The frame sends `setValue` (a JSON string; the host writes the textarea),
+   `query` (the host runs the same `ui.query` fetch with the viewer's session
+   and answers on the port), `height` (from a `ResizeObserver`; the host sets
+   the iframe height, at most 10 000 px), `mounted` and `error`. An error, or
+   no `mounted` within 30 s, shows the usual error and JSON textarea.
+8. The theme is every custom property computed on the form's root element
+   plus its `color`, `font-family`, `font-size`, `line-height` and
+   `color-scheme`; the frame sets them on its `<html>`.
+
+### Measured (Chromium, Playwright 1.56.1, Jenkins 2.541.1, 2026-10-23)
+
+From `js/lab/sandbox-probe.mjs`, with Jenkins's CSP header on every response:
+inside `<iframe sandbox="allow-scripts">` the origin is `"null"`; a
+same-origin classic `<script src>` runs (`'self'` still matches the URL);
+module scripts load in CORS mode and need `Access-Control-Allow-Origin`;
+inline scripts, `eval` and `blob:` imports are blocked; the frame document
+request carries the viewer's cookies, and the frame's own requests carry
+none.
+
+From the browser suite against Jenkins:
+
+- Jenkins sends its CSP header on the frame endpoint's response too.
+- In the frame, `self.origin` is `"null"`; reading `parent.document` and
+  `document.cookie` throws `SecurityError`; `fetch` of `/jenkins/api/json`
+  fails with `TypeError` (no CORS header); setting `top.location` throws
+  `SecurityError`; a message posted to the page window changes nothing.
+- `fetch` and an image to another host fail; Playwright reports the image as
+  a request that failed with `csp`. Navigating the frame to another host
+  sends no request, which matches the page's `default-src 'self'` acting as
+  `frame-src`.
+- A host element with `display: block` let its children's margins collapse
+  through it, so its height was smaller than the document and the frame
+  scrolled. `display: flow-root` keeps the margins inside.
+- axe-core runs its page-level rules (`landmark-one-main`,
+  `page-has-heading-one`, `region`) on the frame's document. The test turns
+  those three off for the frame, which is part of the Jenkins page, and
+  checks with an unlabelled input that axe does look inside the frame.
+- Stapler answers 500 (`IllegalArgumentException` from `TokenList`) for a
+  path with a decoded `..` segment such as `%2e%2e`, before any plugin code
+  runs. `SandboxTest` accepts any refusal for traversal paths and checks
+  that no content leaks.
+
+### Limits
+
+- The code can draw misleading content inside its own frame.
+- Through `ui.query` the code reads whatever the viewer can read, and it can
+  put that into the submitted value, which reaches a build the Jenkinsfile
+  author controls.
+- Channels outside CSP, such as WebRTC, are not tested.
+- Firefox and Safari are not tested; the host's theme copy relies on the
+  computed style listing custom properties, which we have seen only in
+  Chromium.
+- Every frame costs a request to the protected endpoint and one per script.

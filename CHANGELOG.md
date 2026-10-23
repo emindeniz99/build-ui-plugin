@@ -50,5 +50,20 @@ The first release. It needs Jenkins 2.541.1 or newer and Java 17.
   to a browser. Until then the form shows its JSON field, and builds keep
   working. Configuration as Code: `unclassified.buildUi.requireApproval`.
 
-Known limit: with approval off, anyone who can push a Jenkinsfile can run
-JavaScript in the browser of every user who opens the form.
+### Sandbox (optional)
+
+- `sandbox: true` on `uiParameter` or `uiPanel` runs the form's code in
+  `<iframe sandbox="allow-scripts">`: no cookies, no Jenkins API, no access to
+  the page. The code reaches Jenkins only through `ui.query`, which the page
+  runs with the viewer's session. Works for build forms, `input` steps and
+  panels.
+- *Run all form code in a sandbox*, off by default, sandboxes every form with
+  code. Configuration as Code: `unclassified.buildUi.sandboxAll`.
+- With approval on, sandboxed forms still need it; an approval given only for
+  the sandbox does not carry over when a Jenkinsfile drops `sandbox: true`.
+- Tested in Chromium only.
+
+Known limit: with approval and the sandbox off, anyone who can push a
+Jenkinsfile can run JavaScript in the browser of every user who opens the
+form. A sandboxed form can still show misleading content in its frame and put
+data the viewer can read through `ui.query` into the submitted value.

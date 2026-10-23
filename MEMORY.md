@@ -7,7 +7,8 @@ significant work; prune past ~100 lines. Details: `.claude/skills/memory/SKILL.m
 
 Feature-complete for 0.1.0 and tested on 2.541.1 and 2.580.1 (59 JenkinsRule,
 18 browser, 11 checker tests): parameter, `input` step, `uiPanel`,
-`schema-form`, `jenkinsRuns`, `gitRefs`, `argoCdApp`, optional approval, the Jenkinsfile
+`schema-form`, `jenkinsRuns`, `gitRefs`, `argoCdApp`, optional approval,
+optional sandboxed forms (Chromium and 2.541.1 only so far), the Jenkinsfile
 checker, accessibility checks. Release workflow ready; no tag pushed (owner
 decides). GitHub Actions has run no push-triggered workflow in this repo since
 2026-06-25 and the manual jenkins-ui CI run stayed queued, so neither
@@ -33,6 +34,9 @@ never run locally (only Chromium is installed here). Open items:
 - 2026-10-23: ArgoCD servers are admin config (UI or JCasC); the browser names an app, never a server URL; cache key is URL + credentials + app
 - 2026-10-23: x-git-ref checks run on every path the queue sees, but not on the default value (no job context)
 - 2026-10-23: Dependabot cooldowns are all 7 days, matching pnpm minimumReleaseAge
+- 2026-10-23: sandbox = isolated `<iframe sandbox="allow-scripts">`, not DOM mirroring (owner); opt-in per form plus admin `sandboxAll`, off by default
+- 2026-10-23: sandboxed module loads through a one-time token (128 bits, single use, 60 s, 10 000 max) from an unprotected action with CORS `*`; the protected frame endpoint does the Overall/Read check
+- 2026-10-23: approval text marks sandboxed code; a sandbox-only approval does not cover the same code unsandboxed, a page approval covers the sandbox
 
 ## Learnings
 
@@ -54,8 +58,15 @@ never run locally (only Chromium is installed here). Open items:
 - 2026-10-23: a parameterized job answers a bare POST /build with 400; use buildWithParameters
 - 2026-10-23: `git commit --only` refuses untracked files; use the git add fallback
 - 2026-10-23: ScriptApproval.configuring() saves to disk on every call and auto-approves when security is off; getPendingScripts() is restricted API
+- 2026-10-23: sandboxed frame: Jenkins CSP applies to the frame document; page `default-src 'self'` stops the frame navigating to another host; Playwright reports CSP-blocked images as failed with "csp"
+- 2026-10-23: a `display: block` host lets child margins collapse out, so a ResizeObserver height is short; use `display: flow-root`
+- 2026-10-23: axe runs page-level rules (landmark-one-main, page-has-heading-one, region) on an iframe's document; prove axe reaches the frame with a deliberate violation
+- 2026-10-23: Stapler answers 500 for a decoded `..` path segment before plugin code runs
+- 2026-10-23: `pnpm run` (pnpm 12) reconciled the shared node_modules before running a script ("Packages: -26"); run `node scripts/...` directly against a symlinked node_modules
 
 ## Done
+
+- 2026-10-23: sandboxed forms (iframe, token endpoint, MessageChannel protocol), 15 JenkinsRule + 10 browser + 1 checker tests on 2.541.1
 
 - 2026-10-23: argoCdApp provider, JCasC, accessibility suite, example Jenkinsfiles under e2e, full suites green on 2.541.1 and 2.580.1
 - 2026-10-23: checker CLI, Preact vs Solid 2 comparison, gitRefs provider, release workflow and CHANGELOG for 0.1.0
