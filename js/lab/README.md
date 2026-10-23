@@ -11,6 +11,8 @@ node projects/jenkins-ui/js/lab/run3.mjs       # all ex-* pages, strict CSP and 
 node projects/jenkins-ui/js/lab/run4.mjs       # eval probe: enforced, report-only, off
 node projects/jenkins-ui/js/lab/run5.mjs       # style, import and inline-handler probes
 node projects/jenkins-ui/js/lab/run-compare.mjs  # Preact vs Solid 2 on one complex form
+node projects/jenkins-ui/js/lab/alpine-shadow-probe.mjs  # Alpine lifecycle inside shadow roots
+node projects/jenkins-ui/js/lab/eval-runtime-probe.mjs   # alpine3 and vue3 bundles, enforced and report-only CSP
 ```
 
 Open a page by hand at `/page/<name>`, for example `/page/ex-preact-htm`.
