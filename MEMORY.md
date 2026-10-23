@@ -5,11 +5,12 @@ significant work; prune past ~100 lines. Details: `.claude/skills/memory/SKILL.m
 
 ## Now
 
-Phase 0 passed on 2.541.1 and 2.580.1; the plugin works end to end (form,
-REST, `build` step, `input` step, `uiPanel`, `schema-form`). Not released. Next:
-the Preact vs Solid 2 comparison, a CLI checker, or a first `v0.1.0` release
-(see `docs/design.md` section 10). CI (`jenkins-ui-ci.yml`) has not run on
-GitHub yet; its first run is the real test of the workflow.
+Feature-complete for 0.1.0 and tested on 2.541.1 and 2.580.1: parameter,
+`input` step, `uiPanel`, `schema-form`, `jenkinsRuns`, `gitRefs`, the
+Jenkinsfile checker. Release workflow ready; no tag pushed (owner decides).
+GitHub Actions has run no push-triggered workflow in this repo since
+2026-06-25 and the manual jenkins-ui CI run stayed queued, so neither
+workflow has run on GitHub yet. Open items: `docs/design.md` section 10.
 
 ## Decisions
 
@@ -22,6 +23,10 @@ GitHub yet; its first run is the real test of the workflow.
 - 2026-10-23: content endpoint checks Overall/Read, not job Read — one key serves form, input step and panels
 - 2026-10-23: own JSON Schema subset instead of a library — no `$ref`, ReDoS budget, unknown keywords fail loudly
 - 2026-10-23: actions pinned by SHA (graduation rule) although siblings pin by tag
+- 2026-10-23: solid2-html not planned — lost the comparison (design.md section 7)
+- 2026-10-23: gitRefs takes a job, never a URL — no SSRF; needs Item/Build
+- 2026-10-23: runtime IDs and schema keywords live in contract.json, read by Java and the checker
+- 2026-10-23: release by tag jenkins-ui-v<semver>; the .hpi goes to GitHub Releases, never git
 
 ## Learnings
 
@@ -35,8 +40,12 @@ GitHub yet; its first run is the real test of the workflow.
 - 2026-10-23: `hpi:run` loads test-scope plugins (Pipeline) and serves `src/main/webapp` live; give each Jenkins line its own `-DJENKINS_HOME`
 - 2026-10-23: pnpm's isolated layout breaks a browser import map over node_modules; the lab uses `nodeLinker: hoisted`
 - 2026-10-23: input step console shows "Input requested", not the message, when it has parameters
+- 2026-10-23: Preact 11 runs effect cleanups after render(null) returns; wait before asserting a timer stopped
+- 2026-10-23: Solid 2 html sets prop: bindings before the element is connected; plain custom elements lose them
+- 2026-10-23: the Git plugin refuses file: URLs unless hudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true (tests only)
 
 ## Done
 
+- 2026-10-23: checker CLI, Preact vs Solid 2 comparison, gitRefs provider, release workflow and CHANGELOG for 0.1.0
 - 2026-10-23: plugin built and Phase 0 passed (32 JenkinsRule + 8 browser tests on 2.541.1 and 2.580.1), CI workflow added
 - 2026-10-23: renderer research (16 options, strict CSP), Fable and ChatGPT design reviews, design agreed

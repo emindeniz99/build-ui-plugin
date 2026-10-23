@@ -26,8 +26,9 @@ frontend build step.
 
 ## Status
 
-v0.1.0-SNAPSHOT, not released. Phase 0 passed on Jenkins 2.541.1 and 2.580.1:
-32 JenkinsRule tests and 8 browser tests under enforced CSP. The reference
+0.1.0 is ready to release (see [`CHANGELOG.md`](./CHANGELOG.md)); no tag is
+pushed yet. Tested on Jenkins 2.541.1 and 2.580.1: 35 JenkinsRule tests and 8
+browser tests under enforced CSP, plus 10 checker tests. The reference
 form is [`examples/reference.Jenkinsfile`](./examples/reference.Jenkinsfile)
 (53 lines). Design, measurements and open questions:
 [`docs/design.md`](./docs/design.md).
@@ -202,6 +203,13 @@ pnpm --dir projects/jenkins-ui/js vendor            # rebuild runtime bundles af
 
 The installable plugin is `target/build-ui.hpi`. Upload it under *Manage
 Jenkins* » *Plugins* » *Advanced settings*.
+
+### Release
+
+Push a tag `jenkins-ui-v<major>.<minor>.<patch>` on a commit of `main`. The
+`jenkins-ui release` workflow builds the plugin at that version, runs its
+tests, and attaches `build-ui.hpi` and its SHA-256 to a GitHub Release with
+`CHANGELOG.md` as the notes. Update `CHANGELOG.md` first.
 
 ## Notes / learnings
 

@@ -291,4 +291,6 @@ JenkinsRule tests, 8 browser tests).
 ## 10. Not built yet
 
 - Eval-based runtimes behind an admin setting (none ships, so no setting yet).
-- A release: there is no tag and no `.hpi` on GitHub Releases yet.
+- A release: the workflow and `CHANGELOG.md` exist, and a local rehearsal of
+  its steps built `build-ui.hpi` 0.1.0 (64 KB), but no tag is pushed yet.
+- Dependabot entries for this project's Maven and npm dependencies.
