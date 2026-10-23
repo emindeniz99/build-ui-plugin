@@ -109,6 +109,41 @@ test('the declarative schema-form shows a field only while its condition holds',
   expect(problems, problems.join('\n')).toEqual([]);
 });
 
+test('schema-form submits what it shows: an untouched checkbox is false and a hidden default is dropped', async ({ page, request }) => {
+  // No default for "deploy", so its box starts unchecked: the build must get false, the
+  // field gated on false must show, and the default's "env" (gated on true) must not
+  // reach the build although nobody touched the form.
+  await pipelineJob(request, 'schema-shown', `
+    pipeline { agent none
+      parameters { uiParameter(name: 'CFG', runtime: 'schema-form', defaultJson: '{"env":"prod"}', schema: '''{
+        "type": "object", "required": ["deploy"], "properties": {
+          "deploy": { "type": "boolean", "title": "Deploy" },
+          "reason": { "type": "string", "title": "Why not", "x-show-if": { "deploy": false } },
+          "env": { "enum": ["dev", "prod"], "title": "Environment", "x-show-if": { "deploy": true } } } }''') }
+      stages { stage('s') { steps { echo "CFG=\${params.CFG}" } } } }`);
+  await build(request, 'schema-shown');
+  await page.goto('job/schema-shown/build?delay=0sec');
+
+  await expect(page.getByLabel('Why not')).toBeVisible();
+  await expect(page.getByLabel('Environment')).toHaveCount(0);
+  expect(await submitBuildForm(page, request, 'schema-shown')).toContain('CFG={"deploy":false}');
+});
+
+test('schema-form number fields keep what the user types, so 0.05 stays 0.05', async ({ page, request }) => {
+  await pipelineJob(request, 'schema-number', `
+    pipeline { agent none
+      parameters { uiParameter(name: 'CFG', runtime: 'schema-form', schema: '''{
+        "type": "object", "properties": { "ratio": { "type": "number", "title": "Ratio" } } }''') }
+      stages { stage('s') { steps { echo "CFG=\${params.CFG}" } } } }`);
+  await build(request, 'schema-number');
+  await page.goto('job/schema-number/build?delay=0sec');
+
+  // Key by key, as a person types: "0.0" on the way to "0.05" must not collapse to "0".
+  await page.getByLabel('Ratio').pressSequentially('0.05');
+  await expect(page.getByLabel('Ratio')).toHaveValue('0.05');
+  expect(await submitBuildForm(page, request, 'schema-number')).toContain('CFG={"ratio":0.05}');
+});
+
 test('uiParameter works inside an input step', async ({ page, request }) => {
   await pipelineJob(request, 'input-step', `
     def cfg = input message: 'Configure the release', parameters: [uiParameter(name: 'CFG', runtime: 'schema-form',
@@ -135,3 +170,4 @@ test('uiPanel draws a panel on the build page from the run data', async ({ page,
   await expect(page.locator('p.summary')).toHaveText('staging: api, web');
   expect(problems, problems.join('\n')).toEqual([]);
 });
+

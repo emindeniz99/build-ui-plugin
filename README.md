@@ -125,7 +125,8 @@ still start. If your module renders custom elements, wait for them with
   inputs (`"x-widget": "textarea"` for several lines), arrays of `enum` as
   checkbox groups, objects as fieldsets. A property with
   `"x-show-if": { "deploy": true }` appears only while its sibling matches, and
-  its value is dropped while hidden.
+  its value is dropped while hidden, from the initial value too. A boolean
+  nobody touched is `false`, as its unchecked box shows.
 
 ### Data providers
 
