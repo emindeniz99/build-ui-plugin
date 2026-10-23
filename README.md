@@ -251,8 +251,11 @@ made in code. An invalid value gets HTTP 400 with the reason, or fails the
 ### Check a Jenkinsfile before you push it
 
 ```bash
+pnpm --dir projects/jenkins-ui/js install   # once; the checker needs esbuild
 pnpm --dir projects/jenkins-ui/js check path/to/Jenkinsfile
 ```
+
+Paths are relative to the directory you run the command from.
 
 The checker finds every `uiParameter` and `uiPanel` call and reports, with
 Jenkinsfile line numbers: module syntax errors, `import` statements, a missing

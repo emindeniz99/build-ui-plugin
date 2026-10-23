@@ -2,7 +2,8 @@
 // build-ui checker: finds uiParameter(...) and uiPanel ... calls in Jenkinsfiles
 // and reports mistakes before Jenkins runs them, with Jenkinsfile line numbers.
 //
-//   node js/scripts/check.mjs path/to/Jenkinsfile [more files]
+//   pnpm --dir projects/jenkins-ui/js check path/to/Jenkinsfile [more files]
+//   node projects/jenkins-ui/js/scripts/check.mjs path/to/Jenkinsfile [more files]
 //
 // It reads Groovy string literals only. A field built from variables or a
 // "${...}" GString cannot be checked and gets a warning instead.
@@ -250,9 +251,19 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     console.error('usage: check.mjs <Jenkinsfile> [...]');
     process.exit(2);
   }
+  // `pnpm --dir js check <file>` runs this in js/; pnpm puts the caller's directory in INIT_CWD.
+  const base = process.env.INIT_CWD ?? process.cwd();
   let errors = 0;
   for (const file of files) {
-    for (const p of await checkSource(readFileSync(file, 'utf8'))) {
+    let src;
+    try {
+      src = readFileSync(path.resolve(base, file), 'utf8');
+    } catch (e) {
+      console.error(`${file}: cannot read: ${e.code ?? e.message}`);
+      errors++;
+      continue;
+    }
+    for (const p of await checkSource(src)) {
       if (p.level === 'error') errors++;
       console.log(`${file}:${p.line}:${p.column}: ${p.level}: ${p.message}`);
     }

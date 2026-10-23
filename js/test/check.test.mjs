@@ -4,10 +4,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { checkSource } from '../scripts/check.mjs';
 
 const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
 const errors = (problems) => problems.filter((p) => p.level === 'error');
+const script = fileURLToPath(new URL('../scripts/check.mjs', import.meta.url));
+const jsDir = fileURLToPath(new URL('..', import.meta.url));
+const projectDir = fileURLToPath(new URL('../..', import.meta.url));
+// Runs the CLI the way `pnpm --dir js check ...` does: cwd is js/, the caller's directory is in INIT_CWD.
+const cli = (args, initCwd) => spawnSync(process.execPath, [script, ...args], {
+  cwd: jsDir, encoding: 'utf8', env: { ...process.env, INIT_CWD: initCwd },
+});
 
 test('every example Jenkinsfile and the README example are clean', async () => {
   for (const f of ['reference', 'parallel-envs', 'release']) {
@@ -104,4 +113,17 @@ test('comments and strings that merely mention uiParameter are ignored', async (
     echo 'call uiParameter(name: here)'
     uiParameter(name: 'C', module: 'export default () => {}')`);
   assert.deepEqual(p, []);
+});
+
+test('the CLI reads paths relative to the directory pnpm was run from, not js/', () => {
+  // The README and CI both run `pnpm --dir <js> check <path>` with a path relative to the caller.
+  const r = cli(['examples/reference.Jenkinsfile', 'examples/release.Jenkinsfile'], projectDir);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /^2 file\(s\) checked, no errors$/m);
+});
+
+test('a file the CLI cannot read is one error line, not a stack trace', () => {
+  const r = cli(['examples/missing.Jenkinsfile'], projectDir);
+  assert.equal(r.status, 1);
+  assert.deepEqual(r.stderr.trim().split('\n'), ['examples/missing.Jenkinsfile: cannot read: ENOENT']);
 });

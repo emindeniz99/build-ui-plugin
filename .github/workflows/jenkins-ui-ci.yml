@@ -66,7 +66,9 @@ jobs:
       - run: pnpm --dir js install --frozen-lockfile
       - run: pnpm --dir js vendor:check
       - run: pnpm --dir js test
-      - run: pnpm --dir js check ../examples/*.Jenkinsfile
+      # The shell expands the glob here in projects/jenkins-ui; the checker
+      # resolves the paths against INIT_CWD, the directory pnpm ran from.
+      - run: pnpm --dir js check examples/*.Jenkinsfile
 
   e2e:
     name: browser (Jenkins ${{ matrix.line }}, ${{ matrix.browsers }})
