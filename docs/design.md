@@ -291,6 +291,31 @@ JenkinsRule tests, 8 browser tests).
 ## 10. Not built yet
 
 - Eval-based runtimes behind an admin setting (none ships, so no setting yet).
+- An approval step and a sandbox for untrusted code (Remote DOM): declined by
+  the owner for now.
 - A release: the workflow and `CHANGELOG.md` exist, and a local rehearsal of
-  its steps built `build-ui.hpi` 0.1.0 (64 KB), but no tag is pushed yet.
-- Dependabot entries for this project's Maven and npm dependencies.
+  its steps built `build-ui.hpi` 0.1.0, but no tag is pushed yet.
+- Firefox and WebKit runs: CI runs them on the current LTS line, but this
+  container has only Chromium, so no Firefox or WebKit run has happened yet.
+
+## 11. Compatibility and upgrades (Policy)
+
+The plugin follows semantic versioning; a release is a `jenkins-ui-vX.Y.Z` tag.
+What each part promises:
+
+| Part | Within a major version | A breaking change |
+|---|---|---|
+| Module contract `mount({ root, ui, runtime, signal })` | New `ui` fields and new `runtime` exports only | A new runtime ID; the old ID keeps the old contract |
+| Runtime IDs | `preact11-htm3` takes Preact 11.x and htm 3.x patch and minor releases in place | Preact 12 ships as `preact12-htm3`; the old ID stays for at least a year, and the checker warns about it once it is deprecated |
+| Schema keyword subset | Keywords are added, never removed or narrowed | Removing one is a major release |
+| Data provider answers | Fields are added, never renamed or removed | A new provider ID |
+| Jenkinsfile fields of `uiParameter` and `uiPanel` | New optional fields only | A major release with a migration note |
+
+Baseline: the minimum Jenkins version rises when the update center stops
+serving plugins for it (about a year back), or when a needed API is newer.
+Java follows the baseline. CI always tests the minimum line and the current
+LTS line. Every raise goes in `CHANGELOG.md`.
+
+Size budgets (gzip): host 3 KB, `preact11-htm3` 8 KB, `schema-form` 9 KB.
+`pnpm vendor:check` fails past a budget, so growth past it is a decision
+taken in the commit that raises it. Today: 2.3, 6.7 and 7.3 KB.
