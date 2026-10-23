@@ -1,0 +1,11 @@
+# Supply-chain policy from projects/stack/docs/security.md.
+minimumReleaseAge: 10080
+minimumReleaseAgeIgnoreMissingTime: false
+trustPolicy: no-downgrade
+
+# The lab serves node_modules to the browser through one flat import map, so
+# every package (including sub-dependencies such as lit-html) must sit at the top.
+nodeLinker: hoisted
+
+allowBuilds:
+  esbuild: false

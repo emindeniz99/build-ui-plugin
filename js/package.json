@@ -1,0 +1,38 @@
+{
+  "name": "build-ui-js",
+  "private": true,
+  "type": "module",
+  "description": "Browser runtimes, the renderer lab and the end-to-end tests for the build-ui Jenkins plugin.",
+  "engines": { "node": ">=22.13" },
+  "devEngines": {
+    "runtime": { "name": "node", "version": "24.22.1", "onFail": "error" }
+  },
+  "packageManager": "pnpm@12.14.0",
+  "scripts": {
+    "vendor": "node scripts/vendor-runtimes.mjs",
+    "vendor:check": "node scripts/vendor-runtimes.mjs --check",
+    "lab": "node lab/server.mjs",
+    "lab:test": "node lab/run3.mjs",
+    "e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@alpinejs/csp": "^3.17.0",
+    "@arrow-js/core": "^1.0.6",
+    "@awesome.me/webawesome": "^3.14.0",
+    "@playwright/test": "1.56.1",
+    "@preact/signals": "^2.11.0",
+    "@solidjs/html": "2.0.0-rc.15",
+    "@solidjs/web": "2.0.0-rc.15",
+    "alpinejs": "^3.17.0",
+    "esbuild": "^0.25.10",
+    "htm": "3.1.1",
+    "lit": "^3.3.0",
+    "mithril": "^2.3.8",
+    "petite-vue": "0.4.1",
+    "preact": "11.0.1",
+    "solid-js": "2.0.0-rc.15",
+    "uhtml": "^5.0.9",
+    "vanjs-core": "^1.6.1",
+    "vue": "^3.5.0"
+  }
+}

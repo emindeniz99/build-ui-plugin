@@ -1,0 +1,6 @@
+[tools]
+java = "21"
+
+[settings]
+# Node and pnpm come from js/package.json (devEngines and packageManager).
+idiomatic_version_file_enable_tools = ["node", "pnpm"]
