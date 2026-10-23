@@ -175,6 +175,33 @@ class UiParameterTest {
         assertTrue(hidden.getWebResponse().getContentAsString().contains("no job 'secret' that you can read"));
     }
 
+    @Test
+    void formChecksNeedConfigureBecauseTheCallerSuppliesBothSchemaAndValue() throws Exception {
+        // A slow pattern and a large value from the same caller cost controller CPU, so readers may not run checks.
+        j.jenkins.setSecurityRealm(j.createDummySecurityRealm());
+        j.jenkins.setAuthorizationStrategy(new MockAuthorizationStrategy()
+                .grant(Jenkins.READ, Item.READ).everywhere().to("reader")
+                .grant(Jenkins.READ, Item.READ, Item.CONFIGURE).everywhere().to("author"));
+        String descriptor = "descriptorByName/" + UiParameterDefinition.class.getName() + "/";
+        List<NameValuePair> args = List.of(new NameValuePair("value", "{}"), new NameValuePair("schema", SCHEMA));
+
+        assertEquals(403, postAs("reader", "job/p/" + descriptor + "checkDefaultJson", args).getWebResponse().getStatusCode());
+        assertEquals(403, postAs("reader", "job/p/" + descriptor + "checkSchema", args).getWebResponse().getStatusCode());
+        // Outside a job only an administrator may check.
+        assertEquals(403, postAs("author", descriptor + "checkDefaultJson", args).getWebResponse().getStatusCode());
+        Page checked = postAs("author", "job/p/" + descriptor + "checkDefaultJson", args);
+        assertEquals(200, checked.getWebResponse().getStatusCode());
+        assertTrue(checked.getWebResponse().getContentAsString().contains("missing required property"),
+                checked.getWebResponse().getContentAsString());
+    }
+
+    private Page postAs(String user, String path, List<NameValuePair> params) throws Exception {
+        JenkinsRule.WebClient wc = j.createWebClient().withThrowExceptionOnFailingStatusCode(false).login(user);
+        WebRequest req = new WebRequest(URI.create(j.getURL() + path).toURL(), HttpMethod.POST);
+        req.setRequestParameters(new java.util.ArrayList<>(params));
+        return wc.getPage(wc.addCrumb(req));
+    }
+
     private String moduleKeyFromBuildPage() throws Exception {
         JenkinsRule.WebClient wc = j.createWebClient().withThrowExceptionOnFailingStatusCode(false);
         wc.getOptions().setJavaScriptEnabled(false);

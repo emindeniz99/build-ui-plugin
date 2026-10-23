@@ -1,6 +1,7 @@
 package io.jenkins.plugins.buildui;
 
 import java.util.List;
+import java.util.logging.Logger;
 
 /**
  * Runtime IDs the plugin ships. An ID names a major version, so a patch
@@ -14,6 +15,8 @@ public final class Runtimes {
 
     public static final List<String> ALL = Contract.RUNTIMES;
 
+    private static final Logger LOGGER = Logger.getLogger(Runtimes.class.getName());
+
     private Runtimes() {}
 
     static String check(String id) {
@@ -21,5 +24,14 @@ public final class Runtimes {
             throw new IllegalArgumentException("unknown runtime '" + id + "'; available: " + ALL);
         }
         return id;
+    }
+
+    /** For IDs read from disk, which skipped {@link #check}: an unknown one becomes {@link #PREACT}. */
+    static String orDefault(String id, String owner) {
+        if (id != null && ALL.contains(id)) {
+            return id;
+        }
+        LOGGER.warning(() -> "Unknown build-ui runtime '" + id + "' in " + owner + "; using " + PREACT);
+        return PREACT;
     }
 }

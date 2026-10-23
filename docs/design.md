@@ -123,7 +123,10 @@ validates them and nobody approves them. Choices and the facts behind them:
 - `configuring()` approves without asking when Jenkins security is off, and
   skips the pending list for a non-admin under *Force sandbox* (Fact: read in
   the bytecode of script-security 1412 and 1436). The plugin keeps both
-  behaviours to match Groovy approval.
+  behaviours to match Groovy approval. Under *Force sandbox* it does not call
+  `configuring()` for a non-admin at all, and does not remember the hash:
+  that call also drops the form's pending entry, and a remembered hash
+  stopped a later admin view from listing the form.
 - Data sources are not part of the approved text: providers check the
   viewer's permissions on every query, and an admin configures the ArgoCD
   servers.
@@ -162,14 +165,37 @@ validates them and nobody approves them. Choices and the facts behind them:
   value: the form and `buildWithParameters` answer 400 with the reason, the
   `build` step fails with it, and `QueueGuard` (a `QueueDecisionHandler`)
   refuses to queue a hand-built invalid `ParametersAction`.
+- `x-git-ref` is checked before the build starts, never under the queue
+  lock. `Queue.schedule2` calls every `QueueDecisionHandler` with the lock
+  for the whole queue held (Fact: jenkins-core 2.541.1 bytecode), and listing
+  refs is a network call with a 10-minute transport timeout, so one slow Git
+  server stopped every job from scheduling. Request paths (form,
+  `buildWithParameters`) check refs on the request thread and answer 400.
+  For every queued build, `RefGuard` (a `QueueTaskDispatcher`) keeps the
+  item blocked while a pool thread lists the refs, then lets it run or
+  cancels it. A cancelled build never starts and takes no build number; the
+  reason is in the controller log, and a waiting `build` step fails.
 - Limits: 256 KiB per document, nesting depth 32, 1000 array items, 1000
-  object properties, no duplicate keys, patterns up to 256 characters with a
-  50 ms budget per value. No `$ref`; any keyword outside the subset fails when
-  the job is configured.
+  object properties, no duplicate keys, patterns up to 256 characters. All
+  patterns of one document share a 50 ms budget: a per-string budget let a
+  value of thousands of strings cost minutes of controller CPU. Numbers parse
+  as exact decimals (a double turned `1e400` into Infinity), and `enum`,
+  `const` and `uniqueItems` compare them by value. No `$ref`; any keyword
+  outside the subset fails when the job is configured.
 - `schema` and `defaultJson` must parse when the job is configured. The
   default is checked against the schema when a build uses it, and by the form
-  check on the freestyle configuration page; an invalid default fails that
-  build with the reason.
+  check on the freestyle configuration page; `QueueGuard` refuses a build
+  that would use an invalid default and logs the reason. The default getter
+  itself does not throw, because the REST API exports it and a throwing
+  getter dropped the parameter from `job/<name>/api/json`.
+- The form checks (`checkSchema`, `checkDefaultJson`) need Item/Configure,
+  or Overall/Administer outside a job: the caller supplies both the schema
+  and the value, so each check costs controller CPU.
+- The runtime ID is checked on every path that sets it: the setter, and
+  `readResolve` for `config.xml` (REST, CLI) and `build.xml`, which bypass
+  the setter. An unknown ID becomes `preact11-htm3` with a warning in the
+  log. `host.js` builds the import URL from the ID, so an unchecked ID could
+  load any same-origin script, and a form without code needs no approval.
 - `params.BUILD_CONFIG` is a compact JSON string. Values over 32 KiB are not
   exported as an environment variable.
 - A 32 KiB value in the `buildWithParameters` query string did not start a

@@ -5,6 +5,7 @@ import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Extension;
 import hudson.Util;
+import hudson.model.Item;
 import hudson.model.Job;
 import hudson.model.ParameterDefinition;
 import hudson.model.ParameterValue;
@@ -19,8 +20,11 @@ import hudson.security.ACLContext;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.logging.Logger;
+import jenkins.model.Jenkins;
 import net.sf.json.JSONObject;
 import org.jenkinsci.Symbol;
+import org.kohsuke.stapler.AncestorInPath;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
@@ -36,6 +40,7 @@ import org.kohsuke.stapler.verb.POST;
 public class UiParameterDefinition extends SimpleParameterDefinition {
 
     private static final long serialVersionUID = 1L;
+    private static final Logger LOGGER = Logger.getLogger(UiParameterDefinition.class.getName());
 
     private String runtime = Runtimes.PREACT;
     private String module;
@@ -54,6 +59,16 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
     @NonNull
     public String getRuntime() {
         return runtime;
+    }
+
+    /**
+     * XStream (config.xml from REST or the CLI) sets fields without the setter.
+     * host.js imports {@code runtimes/<id>.js}, so an unchecked ID could load any
+     * same-origin script; an unknown one falls back to the default.
+     */
+    protected Object readResolve() {
+        runtime = Runtimes.orDefault(runtime, "parameter " + getName());
+        return this;
     }
 
     @DataBoundSetter
@@ -146,6 +161,26 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
         return errors;
     }
 
+    /** Whether the schema uses {@code x-git-ref}, so values need {@link #refErrorsFor}. */
+    boolean hasRefChecks() {
+        try {
+            Schema s = compiledSchema();
+            return s != null && s.node().findValue("x-git-ref") != null;
+        } catch (IllegalArgumentException e) {
+            return false; // QueueGuard refuses values of a schema that does not compile
+        }
+    }
+
+    /** Only the {@code x-git-ref} errors of {@code json}; contacts the Git server unless its refs are cached. */
+    List<String> refErrorsFor(String json, Job<?, ?> job) {
+        Schema s = compiledSchema();
+        List<String> errors = new ArrayList<>();
+        if (s != null) {
+            checkRefs(s.node(), Json.parse(json, "value of " + getName()), "", job, errors);
+        }
+        return errors;
+    }
+
     private static void checkRefs(JsonNode schema, JsonNode value, String at, Job<?, ?> job, List<String> errors) {
         if (!schema.isObject()) {
             return;
@@ -170,10 +205,13 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
             }
         }
         JsonNode props = schema.path("properties");
+        JsonNode extra = schema.get("additionalProperties");
         if (value.isObject()) {
             value.fields().forEachRemaining(e -> {
                 if (props.has(e.getKey())) {
                     checkRefs(props.get(e.getKey()), e.getValue(), at + "/" + e.getKey(), job, errors);
+                } else if (extra != null) {
+                    checkRefs(extra, e.getValue(), at + "/" + e.getKey(), job, errors);
                 }
             });
         }
@@ -225,10 +263,20 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
         return createValue(value.toString());
     }
 
+    /**
+     * Not validated here: the REST API exports this getter, and a default that
+     * fails a changed schema must not drop the parameter from the job's API.
+     * {@link QueueGuard} refuses every build that would use it.
+     */
     @Override
     public UiParameterValue getDefaultParameterValue() {
-        // The author wrote the default; refs in it are checked by QueueGuard when a build uses it.
-        return create(defaultJson == null ? "{}" : defaultJson, null);
+        String json = getInitialJson();
+        try {
+            json = Json.write(Json.parse(json, "defaultJson"));
+        } catch (IllegalArgumentException e) {
+            LOGGER.fine(() -> "Default of " + getName() + " is not JSON: " + e.getMessage());
+        }
+        return new UiParameterValue(getName(), json, getDescription());
     }
 
     @Override
@@ -315,8 +363,21 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
             return items;
         }
 
+        /**
+         * The caller supplies both the schema and the value, so a check costs
+         * controller CPU: only someone who may configure the job runs it.
+         */
+        private static void checkConfigure(@CheckForNull Item item) {
+            if (item == null) {
+                Jenkins.get().checkPermission(Jenkins.ADMINISTER);
+            } else {
+                item.checkPermission(Item.CONFIGURE);
+            }
+        }
+
         @POST
-        public FormValidation doCheckSchema(@QueryParameter String value) {
+        public FormValidation doCheckSchema(@AncestorInPath Item item, @QueryParameter String value) {
+            checkConfigure(item);
             if (Util.fixEmptyAndTrim(value) == null) {
                 return FormValidation.ok();
             }
@@ -329,7 +390,8 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
         }
 
         @POST
-        public FormValidation doCheckDefaultJson(@QueryParameter String value, @QueryParameter String schema) {
+        public FormValidation doCheckDefaultJson(@AncestorInPath Item item, @QueryParameter String value, @QueryParameter String schema) {
+            checkConfigure(item);
             if (Util.fixEmptyAndTrim(value) == null) {
                 return FormValidation.ok();
             }

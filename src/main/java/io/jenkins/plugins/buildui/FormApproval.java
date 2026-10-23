@@ -39,6 +39,12 @@ public final class FormApproval {
         if (approval.isScriptApproved(text, language)) {
             return true;
         }
+        if (approval.isForceSandboxForCurrentUser()) {
+            // configuring() would list nothing for this viewer and drop the form's
+            // pending entry, and remembering the hash would stop an admin's view
+            // from listing it later.
+            return false;
+        }
         String key = "build-ui:" + (job == null ? "" : job.getFullName()) + "#" + form;
         String hash = ContentStore.sha256(text.getBytes(StandardCharsets.UTF_8));
         // configuring() saves to disk on every call, so a page view submits a

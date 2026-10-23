@@ -153,8 +153,11 @@ once, caches each answer for 30 seconds, and needs the Git plugin.
 
 To make the controller reject a ref that does not exist, mark the property in
 the schema: `{ "type": "string", "x-git-ref": "tag" }` (or `"branch"`, `"any"`,
-`true`). The form and `buildWithParameters` answer 400 with the reason; a
-downstream `build` step or a script gets its build refused by the queue. A job
+`true`). The form and `buildWithParameters` answer 400 with the reason. A
+build queued another way (a downstream `build` step, a timer, a script) waits
+in the queue while Jenkins lists the refs, and is cancelled before it starts
+if a ref does not exist or the refs cannot be listed; the reason goes to the
+controller log. A slow Git server holds only that build, not the queue. A job
 that has not checked out yet has no refs to compare with, so the check waits
 for its first checkout; `defaultJson` is checked when a build uses it.
 
@@ -165,7 +168,8 @@ servers under *Manage Jenkins* » *System* » *Build UI*: a name, the URL, a
 *Secret text* credential holding an ArgoCD API token, and a glob of the
 application names forms may read (`*` by default). The browser only names an
 application, so Jenkins contacts only configured servers, and the token never
-leaves the controller. Answers are cached for 10 seconds. With the
+leaves the controller. Answers are cached for 10 seconds, and a server that
+takes longer than 15 seconds to answer fails the query. With the
 Configuration as Code plugin the same settings live under `unclassified.buildUi`.
 
 ```yaml
@@ -225,7 +229,7 @@ With approval on:
   or Jenkins restarts.
 - Like Groovy scripts, everything counts as approved when Jenkins security is
   off. With *Force sandbox* on, only an admin opening the form adds it to the
-  pending list.
+  pending list; views by other users before or after leave the list as it is.
 
 ### Validation and limits
 
@@ -242,7 +246,10 @@ made in code. An invalid value gets HTTP 400 with the reason, or fails the
   `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, plus
   annotations and `x-` extensions. Any other keyword, `$ref` included, fails
   when the job is configured.
-- `pattern` is a Java regular expression with a 50 ms budget per value.
+- `pattern` is a Java regular expression. All patterns in one document
+  share a 50 ms budget; past it the value is rejected.
+- `enum`, `const` and `uniqueItems` compare numbers by value, so `5.0`
+  equals `5`.
 - Values over 32 KiB stay in `params` but do not become an environment
   variable of build processes.
 - Send large values to `buildWithParameters` in the POST body: a 32 KiB value

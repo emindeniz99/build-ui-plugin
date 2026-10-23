@@ -29,6 +29,12 @@ public class UiPanelAction extends InvisibleAction {
         return runtime;
     }
 
+    /** build.xml is read without the step's check; see {@link UiParameterDefinition#readResolve()}. */
+    protected Object readResolve() {
+        String checked = Runtimes.orDefault(runtime, "panel " + title);
+        return checked.equals(runtime) ? this : new UiPanelAction(title, checked, module, html, css, data);
+    }
+
     public String getData() {
         return data;
     }

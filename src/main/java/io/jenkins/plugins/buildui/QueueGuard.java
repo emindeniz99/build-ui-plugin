@@ -17,6 +17,9 @@ import java.util.logging.Logger;
  * fails its schema, however the value was made (a script, another plugin,
  * a hand-built {@link ParametersAction}). The form, REST and {@code build}
  * paths already reject invalid values with a message before they get here.
+ * Jenkins calls this with the lock for the whole queue held, so it checks
+ * only the schema, whose pattern time is bounded per document; Git refs need
+ * the network and are checked by {@link RefGuard} outside the lock.
  */
 @Extension
 public class QueueGuard extends Queue.QueueDecisionHandler {
@@ -42,7 +45,7 @@ public class QueueGuard extends Queue.QueueDecisionHandler {
                     continue;
                 }
                 List<String> errors = value instanceof StringParameterValue s && s.getValue() != null
-                        ? ui.errorsFor(s.getValue(), job)
+                        ? ui.errorsFor(s.getValue())
                         : List.of("value is not a JSON string but " + value.getClass().getSimpleName());
                 if (!errors.isEmpty()) {
                     LOGGER.warning(() -> "Not scheduling " + job.getFullName() + ": parameter " + value.getName() + ": " + String.join("; ", errors));

@@ -19,10 +19,10 @@ import hudson.scm.SCM;
 import hudson.security.ACL;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import jenkins.model.Jenkins;
@@ -46,7 +46,14 @@ public class GitRefsProvider extends DataProvider implements RefLookup {
     static final long CACHE_MILLIS = 30_000;
     static final int DEFAULT_LIMIT = 200;
     static final int MAX_LIMIT = 1000;
-    private static final Map<String, Cached> CACHE = new ConcurrentHashMap<>();
+    /** Repositories with many tags take MBs each, so the cache keeps only the most recently used. */
+    static final int CACHE_ENTRIES = 256;
+    private static final Map<String, Cached> CACHE = new LinkedHashMap<>(64, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, Cached> eldest) {
+            return size() > CACHE_ENTRIES;
+        }
+    };
 
     private record Cached(long at, Map<String, String> refs) {}
 
@@ -149,9 +156,12 @@ public class GitRefsProvider extends DataProvider implements RefLookup {
     private static Map<String, String> remoteRefs(Job<?, ?> job, UserRemoteConfig remote) {
         String url = remote.getUrl();
         String key = job.getFullName() + "\n" + url + "\n" + remote.getCredentialsId();
-        Cached cached = CACHE.get(key);
-        if (cached != null && System.currentTimeMillis() - cached.at() < CACHE_MILLIS) {
-            return cached.refs();
+        synchronized (CACHE) {
+            Cached cached = CACHE.get(key);
+            if (cached != null && System.currentTimeMillis() - cached.at() < CACHE_MILLIS) {
+                return cached.refs();
+            }
+            CACHE.remove(key);
         }
         try {
             GitClient client = Git.with(TaskListener.NULL, new EnvVars()).using("jgit").getClient();
@@ -163,7 +173,7 @@ public class GitRefsProvider extends DataProvider implements RefLookup {
             for (Map.Entry<String, ObjectId> e : client.getRemoteReferences(url, null, false, false).entrySet()) {
                 refs.put(e.getKey(), e.getValue().name());
             }
-            CACHE.put(key, new Cached(System.currentTimeMillis(), refs));
+            remember(key, refs);
             return refs;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -171,6 +181,18 @@ public class GitRefsProvider extends DataProvider implements RefLookup {
         } catch (Exception e) {
             // The message goes to the browser: keep it to the URL, never credential details.
             throw new IllegalArgumentException("could not list refs of " + url + " (" + e.getClass().getSimpleName() + ")", e);
+        }
+    }
+
+    static void remember(String key, Map<String, String> refs) {
+        synchronized (CACHE) {
+            CACHE.put(key, new Cached(System.currentTimeMillis(), refs));
+        }
+    }
+
+    static int cacheSize() {
+        synchronized (CACHE) {
+            return CACHE.size();
         }
     }
 
@@ -194,25 +216,24 @@ public class GitRefsProvider extends DataProvider implements RefLookup {
     /**
      * Orders names the way people read versions: digit runs compare as
      * numbers ({@code v1.10} after {@code v1.9}), and a release comes after
-     * its pre-releases ({@code 1.0.0} after {@code 1.0.0-rc1}).
+     * its pre-releases ({@code 1.0.0} after {@code 1.0.0-rc1}). The order is
+     * consistent, so sorting cannot throw: a chunk starting with {@code -}
+     * ranks below the end of the name, and every other chunk above it.
      */
     static int compareVersions(String a, String b) {
         Matcher ma = CHUNK.matcher(a);
         Matcher mb = CHUNK.matcher(b);
         while (true) {
-            boolean hasA = ma.find();
-            boolean hasB = mb.find();
-            if (!hasA && !hasB) {
+            String ca = ma.find() ? ma.group() : null;
+            String cb = mb.find() ? mb.group() : null;
+            int ra = rank(ca);
+            int rb = rank(cb);
+            if (ra != rb) {
+                return Integer.compare(ra, rb);
+            }
+            if (ca == null) {
                 return 0;
             }
-            if (!hasA) {
-                return mb.group().startsWith("-") ? 1 : -1;
-            }
-            if (!hasB) {
-                return ma.group().startsWith("-") ? -1 : 1;
-            }
-            String ca = ma.group();
-            String cb = mb.group();
             int c;
             if (Character.isDigit(ca.charAt(0)) && Character.isDigit(cb.charAt(0))) {
                 String na = ca.replaceFirst("^0+(?=\\d)", "");
@@ -225,5 +246,10 @@ public class GitRefsProvider extends DataProvider implements RefLookup {
                 return c;
             }
         }
+    }
+
+    /** 0: a pre-release chunk ({@code -rc1}); 1: the end of the name; 2: any other chunk. */
+    private static int rank(String chunk) {
+        return chunk == null ? 1 : chunk.startsWith("-") ? 0 : 2;
     }
 }
