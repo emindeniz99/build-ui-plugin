@@ -36,9 +36,15 @@ The first release. It needs Jenkins 2.541.1 or newer and Java 17.
 - `jenkinsRuns`: recent builds of a readable job; with `parameter`, each run's
   past value of a build-ui parameter, never passwords or other parameters.
 - `gitRefs`: branches and tags of the repositories a job uses, with glob
-  filters, newest-version-first sorting and a limit. The `x-git-ref` schema
-  keyword makes the controller reject refs that do not exist. Needs the Git
-  plugin and Build permission.
+  filters, a `repository` glob that picks one of the job's remotes, a
+  case-insensitive `search`, newest-version-first sorting, and `offset` and
+  `limit` with a `total` count for paging. The `x-git-ref` schema keyword
+  makes the controller reject refs that do not exist, and `x-git-repository`
+  limits that check to matching remotes. Needs the Git plugin and Build
+  permission. A test compares its lists with Git Parameter's for
+  equivalent settings; the README lists where they differ.
+- Works next to Git Parameter and Active Choices on one form, and after a
+  job is renamed or moved into a folder (tested).
 - `argoCdApp`: health, sync state, revision and images of an ArgoCD
   application, from servers an admin configures under Manage Jenkins » System
   » Build UI or with Configuration as Code (`unclassified.buildUi`).
@@ -50,6 +56,8 @@ The first release. It needs Jenkins 2.541.1 or newer and Java 17.
 - Works with Jenkins's enforced Content Security Policy and never loosens it.
 - JSON limits: 256 KiB, depth 32, 1000 items or properties; regular
   expressions in schemas run with a 50 ms budget per value.
+- Glob filters (`gitRefs`, ArgoCD `apps`) match without regular
+  expressions, in time bounded by glob length times name length.
 - Accessible: no axe violations in the reference and parallel-envs examples,
   a `schema-form` form and the error fallback; forms work with the keyboard, typing "/" included; colors follow
   the Jenkins theme and meet 4.5:1 contrast.

@@ -31,7 +31,8 @@ original RFC is issue #94; the design here replaces it where they disagree.
 | Sandbox for form code | Opt-in: `sandbox: true` on `uiParameter` and `uiPanel`, or the admin setting *Run all form code in a sandbox* (`sandboxAll`, JCasC). Off by default. The code renders in `<iframe sandbox="allow-scripts">` (owner, 2026-10-23: isolated iframe, not DOM mirroring). Section 12. | An opaque-origin frame has no cookies, no Jenkins API and no access to the page, and needs no change to Jenkins's CSP. Mirroring a worker's DOM into the page would need a renderer of our own and is not built. |
 | Surfaces, in order | Build with Parameters form, then the `input` step, then panels on the build page (`uiPanel` step). All three are built. | The `input` step is the same form problem; build-page panels are a different product. |
 | Declarative no-JS tier | Built as the `schema-form` runtime, which exports `mount` itself, so a job needs no module | It needs nothing from the core and proves the contract with a second consumer. |
-| Data providers | `DataProvider` extension point; ships `jenkinsRuns` (Item/Read), `gitRefs` (Item/Build, optional Git plugin) and `argoCdApp` (admin-configured servers) | No provider takes a URL from the browser: `gitRefs` takes a job, `argoCdApp` a server name and an app name matched against an admin glob. That rules out SSRF through providers, and credentials stay on the controller. |
+| Data providers | `DataProvider` extension point; ships `jenkinsRuns` (Item/Read), `gitRefs` (Item/Build, optional Git plugin) and `argoCdApp` (admin-configured servers) | No provider takes a URL from the browser: `gitRefs` takes a job, plus a glob that picks among that job's remotes (section 15); `argoCdApp` takes a server name and an app name matched against an admin glob. That rules out SSRF through providers, and credentials stay on the controller. |
+| Git Parameter parity | `gitRefs` gains `repository`, `search`, `offset` and a `total` count; `x-git-repository` narrows `x-git-ref`. A JenkinsRule test compares both plugins' lists on one repository (section 15) | Issue #94: "do not replace it until parity is demonstrated". |
 | Forms kept in the repository | `formFrom: '<folder>'` reads `form.mjs`, `form.html`, `form.css`, `schema.json` and `default.json` from the head of the job's branch through the SCM API (owner, 2026-10-27); section 14 | Jenkins stores parameter definitions in the job, so an inline form changes only after a build runs the new Jenkinsfile. Reading the branch head shows a push on the next page load. |
 | Single-file form | One `<script type="module">` and any `<style>` in `html` or `form.html` are split out on the controller (owner, 2026-10-27); section 14 | No browser loads HTML modules, and Jenkins's CSP blocks inline scripts. Design choice, not measured here. |
 | Parked | TSX through swc4j, Remote DOM (a worker whose DOM the page mirrors), Web Awesome pack | No current need justifies the cost; the iframe sandbox covers isolation. |
@@ -377,6 +378,9 @@ JenkinsRule tests, 8 browser tests).
 - `formFrom` with an SCM other than Git, or with a remote that needs
   credentials: the tests use local Git repositories without credentials
   (on 2.541.1 and 2.580.1; section 14).
+- The Git Parameter comparison and the integration tests on 2.580.1, and
+  over HTTP or SSH remotes: they ran on 2.541.1 with `file:` repositories
+  only (section 15).
 - `uiPanel` keeps its old `html` rule: a `<script>` there is a checker error,
   and the controller does not split a panel's `html`.
 
@@ -619,7 +623,10 @@ branch head when *Build with Parameters* opens.
    seconds; a read that takes longer keeps going and fills the cache for
    the next request. Files are capped at 512 KiB (`form.mjs`, `form.html`,
    `form.css`) and 256 KiB (`schema.json`, `default.json`, then the JSON
-   limits of section 5).
+   limits of section 5). An `ItemListener` drops a job's entries when it is
+   renamed, moved or deleted: without it, a job that took a renamed job's
+   name within 10 seconds showed the other job's form (found by
+   `IntegrationTest`, 2026-10-27).
 4. The brief asked for a cache per job and resolved head revision. The key
    is the job and folder instead, and the entry records the revision for the
    log: `SCMFileSystem` reports a revision only after `of()` has resolved the
@@ -703,3 +710,106 @@ JenkinsRule on Jenkins 2.541.1, Git plugin 5.10.1, scm-api 728, git 2.43.0,
   report it as a conflict.
 - Only Git was tried, only `file:` repositories without credentials, only
   Chromium.
+
+## 15. gitRefs, Git Parameter parity and other plugins (Tested)
+
+`GitRefsProviderTest` (19 tests), `GitParameterParityTest` (5) and
+`IntegrationTest` (4), JenkinsRule on Jenkins 2.541.1 with local Git
+repositories, cover this section.
+
+Issue #94 lists what Git Parameter does that `gitRefs` must match before it
+can replace it: tagFilter, DESCENDING_SMART, repository matching,
+validation of the selected ref at submission, and bounded, paged or
+searchable results. The reference is Git Parameter 462.463 (the BOM's
+version), read in its source and run in the test.
+
+### Decisions
+
+- `repository` is a glob of the remote URL, matched against the URL the job
+  configures. Git Parameter's `useRepository` matches remote URLs too, as a
+  regex with `find()` (Fact: `SCMFactory` and `GitParameterDefinition` in
+  462.463); it has no name or ID match, so neither does `gitRefs`. A glob
+  instead of a regex keeps the browser's input out of the regex engine. The
+  argument filters the job's own remotes and is never contacted, so it opens
+  no SSRF path; a glob that matches none answers 400.
+- `search` is a case-insensitive substring of the name, applied after the
+  globs, at most 100 characters. Plain text cannot backtrack, and a person
+  typing into a search box expects a substring, not a pattern.
+- Paging: `offset` next to the existing `limit`, both per list, and a new
+  `total` object with the count of each list after filtering and before
+  paging. `branches` and `tags` keep their shape, so existing forms see
+  only an added field, as section 11 allows for provider answers.
+- `x-git-repository` next to `x-git-ref` restricts the submit and queue
+  check to the matching remotes. The schema check refuses it without
+  `x-git-ref`, or when it is not a string of 1 to 100 characters.
+- Where Git Parameter behaves differently on purpose, `gitRefs` keeps its
+  own behaviour and the parity test asserts the difference (below).
+
+### Mechanism
+
+1. `GitRefsProvider.refs(job, repository)` collects the `UserRemoteConfig`s
+   of the job's `GitSCM`s, keeps those whose URL the glob matches, lists
+   each remote's refs through the 30-second cache (key: job, URL,
+   credentials ID), and drops peeled `^{}` entries.
+2. `query` drops names that do not contain `search`, applies the branch and
+   tag globs, sorts, counts, then cuts `offset` and `limit` from each list.
+3. `UiParameterDefinition.checkRefs` reads `x-git-repository` from the same
+   schema node as `x-git-ref` and passes it to `RefLookup.hasRef`, on the
+   request thread for the form and `buildWithParameters` and in `RefGuard`
+   for queued builds (section 5).
+4. `Globs` matches without `java.util.regex`. It walks the glob and keeps
+   only the last `*` to retry from, so a match costs at most glob length
+   times name length steps.
+
+### Measured
+
+JenkinsRule, Jenkins 2.541.1, Git Parameter 462.463, Git plugin 5.10.1, git
+2.43.0, Java 21, 2026-10-27:
+
+- The old glob code compiled `*a*a*a*a*b` to `.*a.*a.*a.*a.*b`; matching it
+  against 200 `a`s took 20.5 s, and six stars ran past 100 s. Anyone with
+  Build permission writes the filter and anyone with push access writes ref
+  names. The new matcher fails `*a` repeated 49 times plus `*b` against
+  10 000 `a`s within the test's 2-second bound.
+- Git Parameter's `tagFilter: 'v*'` returned `old/v0.9` as well: it passes
+  the filter to `git ls-remote`, which matches the end of the ref path.
+  `tags: 'v*'` matches whole names and leaves it out; `tags: '*/v*'`
+  returns it.
+- `DESCENDING_SMART` returned `v2.0, v1.10.0-rc1, v1.10.0, v1.9.0, v1.1,
+  v1.0`; `version-desc` returned the same list with the release before its
+  candidate. Its comparator ranks a name after its own prefix, and the
+  descending sort reverses that.
+- Neither plugin listed a peeled `^{}` entry for the annotated tag.
+- Without `useRepository`, Git Parameter listed the job's first repository
+  only. Without a group in `branchFilter` it named branches `origin/main`.
+- `listSize: '2'` returned all 7 tags; it sets the select box's height.
+- Git Parameter answered 400 on `buildWithParameters` for a tag it does not
+  list, and for a tag of the job's other repository when `useRepository`
+  named one. `x-git-ref` with `x-git-repository` gave the same answers.
+- A *Build with Parameters* page with a `uiParameter`, a Git Parameter and
+  an Active Choices parameter (uno-choice 2.8.11, sandboxed Groovy):
+  HtmlUnit ran Jenkins's page scripts, Git Parameter filled its select on
+  the page, and the submitted form brought all three values to the build.
+  The test writes the `uiParameter`'s JSON field, which is what its form
+  submits; whether HtmlUnit ran the form's module was not checked, and the
+  browser suite covers module-driven forms.
+- The first form page of a fresh JenkinsRule instance took 7.6 s, so the
+  rename test warms the pages and fills the formFrom cache with the same
+  read the page makes, and fails if it passes the 10-second window.
+
+### Limits
+
+- Only `file:` repositories without credentials, CLI git for Git Parameter
+  and JGit for `gitRefs`. Over HTTP or SSH, Git Parameter's tag matching
+  goes through the same `ls-remote` rule (Assumption: not run here).
+- Not compared: `PT_REVISION`, `PT_PULL_REQUEST`, `PT_BRANCH_TAG`,
+  `selectedValue`, and Git Parameter's quick filter against `search`.
+- A job renamed or moved while a formFrom read for it is in flight can
+  still store that read under the old name, for one cache window.
+- A folder rename (as opposed to moving a job into a folder) is not tested;
+  Jenkins reports it as a location change of every item inside, which
+  `FormFrom.Renames` handles (Fact: `ItemListener.fireLocationChange` walks
+  `Items.allItems2` of an `ItemGroup`, jenkins-core 2.541.1 bytecode).
+- An approval still pending when a job moves stays approvable: approval
+  keys on the code's hash, and the test approves it after the move. Which
+  job name the pending list shows after the move was not checked.

@@ -320,23 +320,42 @@ got from this form (or `null`), so a form can show history without parsing
 build descriptions. Only build-ui values come back this way, never passwords
 or other parameter types.
 
-`ui.query('gitRefs', { job: ui.job })` returns `{ branches: [...], tags: [...] }`,
-each entry `{ name, sha, repository }`, for the Git repositories that job
-already uses. The browser never sends a URL, so Jenkins only contacts servers
-a job is configured for, and the job's credentials stay on the controller. It
-needs Build permission on the job, works once the job has checked out at least
-once, caches each answer for 30 seconds, and needs the Git plugin.
+`ui.query('gitRefs', { job: ui.job })` returns
+`{ branches: [...], tags: [...], total: { branches, tags } }`, each entry
+`{ name, sha, repository }`, for the Git repositories that job already uses.
+`total` counts the entries that pass the filters, before `offset` and
+`limit`, so a form can tell whether another page exists. The browser never
+sends a URL for Jenkins to contact: `repository` only picks among the job's
+own remotes, so Jenkins only contacts servers a job is configured for, and
+the job's credentials stay on the controller. It needs Build permission on
+the job, works once the job has checked out at least once, caches each
+repository's refs for 30 seconds, and needs the Git plugin.
 
 | Argument | Default | Meaning |
 |---|---|---|
 | `job` | required | Full name of the job, usually `ui.job` |
-| `branches`, `tags` | `*` | Glob filters (`*` any run, `?` one character), for example `release/*` or `v1.*` |
+| `repository` | all | A glob of the remote URL, as the job configures it, for example `*/tools.git`. Only remotes that match are listed; a glob that matches none gets 400 |
+| `branches`, `tags` | `*` | Glob filters (`*` any run, `?` one character), matched against the whole name, for example `release/*` or `v1.*` |
+| `search` | none | Keeps names that contain this text, ignoring case. Plain text, applied after the globs; at most 100 characters |
 | `sort` | `name` | `name`, or `version-desc` for newest version first: `v1.10.0` before `v1.9.0`, and `1.0.0` before `1.0.0-rc1` |
+| `offset` | `0` | Entries to skip in each list |
 | `limit` | `200` | Entries per list, at most 1000 |
+
+Globs are at most 100 characters. Jenkins matches them without regular
+expressions, so a filter costs at most its length times the name's length.
+
+```js
+// The second page of release tags of the tools repository, and whether a third exists.
+const page = await ui.query('gitRefs', { job: ui.job, repository: '*/tools.git', tags: 'v*',
+  sort: 'version-desc', offset: 50, limit: 50 })
+const more = 100 < page.total.tags
+```
 
 To make the controller reject a ref that does not exist, mark the property in
 the schema: `{ "type": "string", "x-git-ref": "tag" }` (or `"branch"`, `"any"`,
-`true`). The form and `buildWithParameters` answer 400 with the reason. A
+`true`). Add `"x-git-repository": "*/tools.git"` to look only in the remotes
+that glob matches; the controller refuses `x-git-repository` without
+`x-git-ref`. The form and `buildWithParameters` answer 400 with the reason. A
 build queued another way (a downstream `build` step, a timer, a script) waits
 in the queue while Jenkins lists the refs, and is cancelled before it starts
 if a ref does not exist or the refs cannot be listed; the reason goes to the
@@ -366,6 +385,36 @@ unclassified:
 ```
 
 Other plugins can add providers by extending `io.jenkins.plugins.buildui.DataProvider`.
+
+#### Coming from Git Parameter
+
+`GitParameterParityTest` asks Git Parameter 462.463 and `gitRefs` for the
+refs of one job with the settings below, and compares both lists entry by
+entry, in order.
+
+| Git Parameter | `gitRefs` | Same result? |
+|---|---|---|
+| `tagFilter: 'v*'` | `tags: 'v*'` | Yes, except tags in folders: Git Parameter matches the end of the ref path, so `v*` also takes `old/v0.9`. `tags: '*/v*'` lists those |
+| `sortMode: 'DESCENDING_SMART'` | `sort: 'version-desc'` | Yes, except that Git Parameter puts `v1.10.0-rc1` before `v1.10.0` and `gitRefs` puts the release first |
+| `branchFilter: 'origin/(release/.*)'` | `branches: 'release/*'` | Yes. Without a group in the filter, Git Parameter names branches `origin/main` |
+| `useRepository: 'tools'` (a regex found in the URL) | `repository: '*tools*'` (a glob of the whole URL) | Yes. Without it, Git Parameter lists the job's first repository only and `gitRefs` lists all of them |
+| `listSize: '5'` | `limit: 5` | No: `listSize` sets how many rows the select box shows, and Git Parameter still returns every ref. `limit` cuts the answer; `offset` and `total` page through the rest |
+| A value that is not in the list, at submission | `x-git-ref` (with `x-git-repository`) | Yes: both answer 400 on `buildWithParameters` |
+
+`gitRefs` has nothing like Git Parameter's `PT_REVISION` and
+`PT_PULL_REQUEST` types or `selectedValue: 'TOP'`. For `PT_BRANCH_TAG`, which
+lists tags and then branches in one select, a form joins the two lists
+itself. The test did not compare Git Parameter's quick filter with `search`.
+
+#### Next to other parameter plugins
+
+`IntegrationTest` puts a `uiParameter`, a Git Parameter and an Active
+Choices parameter (uno-choice 2.8.11, sandboxed Groovy) on one *Build with
+Parameters* page. Submitting the form and calling `buildWithParameters`
+both bring all three values to the build, and the `uiParameter` and the
+Git Parameter still refuse their own bad values. Renaming a job or moving it into a folder keeps its form,
+its content URLs, its refs and an approval made before the move; a job that
+takes the old name gets its own form, not the cached one.
 
 ### Panels on the build page
 
