@@ -2,9 +2,11 @@
 // Jenkins's CSP header? Starts its own server on 127.0.0.1:4330 and drives one
 // browser engine. Run: node js/lab/sandbox-probe.mjs [chromium|firefox|webkit]
 //
-// Two frames: "jenkins" gets Jenkins's policy as it is; "origin" gets the same
-// policy with script-src naming the origin instead of 'self', to tell a
-// 'self' mismatch apart from any other block.
+// Three frames, created as host.js creates its frame: "jenkins" loads a
+// document served with Jenkins's policy as it is; "origin" one whose
+// script-src names the origin instead of 'self', to tell a 'self' mismatch
+// apart from other blocks; "srcdoc" has the same markup in srcdoc, so it
+// inherits the parent page's policy instead of getting its own.
 import http from 'node:http';
 import * as playwright from '@playwright/test';
 
@@ -14,32 +16,37 @@ const ORIGIN = 'http://127.0.0.1:4330';
 const CSP_ORIGIN = CSP.replace("script-src 'report-sample' 'self'", `script-src 'report-sample' ${ORIGIN}`);
 const seen = [];
 
-const post = (probe) => `parent.postMessage({ probe: ${JSON.stringify(probe)}, frame: location.search.slice(1), ok: true }, '*');`;
+// The frame's name (the iframe's name attribute) says which frame reports.
+const post = (probe) => `parent.postMessage({ probe: ${JSON.stringify(probe)}, frame: self.name, ok: true }, '*');`;
+const FRAME = `<!doctype html>
+<script src="/classic.js"></script>
+<script type="module" src="/module-plain.mjs"></script>
+<script type="module" src="/module-cors.mjs"></script>
+<script>parent.postMessage({ probe: 'inline-script', frame: self.name, ok: true }, '*')</script>
+<div id="d">frame</div>`;
 const FILES = {
-  '/parent.html': ['text/html', `<!doctype html><script type="module" src="/parent.mjs"></script>
-<iframe id="jenkins" sandbox="allow-scripts" src="/frame.html?jenkins"></iframe>
-<iframe id="origin" sandbox="allow-scripts" src="/frame.html?origin"></iframe>`],
+  '/parent.html': ['text/html', '<!doctype html><script type="module" src="/parent.mjs"></script>'],
   '/parent.mjs': ['text/javascript', `
     window.results = {};
     addEventListener('message', (e) => {
       if (e.data?.probe) window.results[e.data.frame + ' ' + e.data.probe] = { ok: e.data.ok, detail: e.data.detail, origin: e.origin };
     });
-    // What host.js does: on load, send one message that transfers a MessagePort.
-    for (const f of document.querySelectorAll('iframe')) {
+    for (const [name, attr, value] of [['jenkins', 'src', '/frame.html?jenkins'], ['origin', 'src', '/frame.html?origin'], ['srcdoc', 'srcdoc', ${JSON.stringify(FRAME)}]]) {
+      const f = document.createElement('iframe');
+      f.name = name;
+      f.setAttribute('sandbox', 'allow-scripts');
+      f.setAttribute(attr, value);
+      // What host.js does: on load, send one message that transfers a MessagePort.
       f.addEventListener('load', () => {
         const { port1, port2 } = new MessageChannel();
-        port1.onmessage = (e) => { window.results[f.id + ' message-port'] = { ok: e.data === 'pong' }; };
+        port1.onmessage = (e) => { window.results[name + ' message-port'] = { ok: e.data === 'pong' }; };
         f.contentWindow.postMessage('ping', '*', [port2]);
-      });
+      }, { once: true });
+      document.body.append(f);
     }`],
-  '/frame.html': ['text/html', `<!doctype html>
-<script src="/classic.js"></script>
-<script type="module" src="/module-plain.mjs"></script>
-<script type="module" src="/module-cors.mjs"></script>
-<script>parent.postMessage({ probe: 'inline-script', frame: location.search.slice(1), ok: true }, '*')</script>
-<div id="d">frame</div>`],
+  '/frame.html': ['text/html', FRAME],
   '/classic.js': ['text/javascript', `${post('classic-same-origin')}
-    const frame = location.search.slice(1);
+    const frame = self.name;
     const report = (probe, ok, detail) => parent.postMessage({ probe, frame, ok, detail }, '*');
     addEventListener('message', (e) => { if (e.ports[0]) e.ports[0].postMessage('pong'); });
     try { new Function('return 1')(); report('eval', true); } catch (e) { report('eval', false, String(e).slice(0, 80)); }
@@ -88,8 +95,9 @@ const firstOfSecondLoad = seen.length;
 await page.reload(); // second load carries the cookie set by the first
 await page.waitForTimeout(1500);
 const results = await page.evaluate(() => window.results);
-for (const frame of ['jenkins', 'origin']) {
-  console.log(`--- frame "${frame}": script-src ${frame === 'jenkins' ? "'self'" : ORIGIN}`);
+const FRAMES = { jenkins: "own document, script-src 'self'", origin: `own document, script-src ${ORIGIN}`, srcdoc: "srcdoc, the page's policy (script-src 'self')" };
+for (const [frame, what] of Object.entries(FRAMES)) {
+  console.log(`--- frame "${frame}": ${what}`);
   for (const probe of PROBES) {
     const v = results[`${frame} ${probe}`];
     console.log(v ? `${v.ok ? 'PASS' : 'FAIL'} ${probe}${v.detail ? ` (${v.detail})` : ''}` : `NONE ${probe} (no result: the probe did not run)`);
