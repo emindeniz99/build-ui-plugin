@@ -305,6 +305,54 @@ test('splitHtml matches the controller: styles join in order, comments keep thei
   });
 });
 
+// The same inputs as SingleFileHtmlTest: an onerror the browser runs must be found however the markup around it is written.
+const RUNS = '<img src=x onerror=alert(1)>';
+const handlerRefused = (html) => assert.deepEqual(splitHtml(html, 'html').errors.map((e) => e.split(';')[0]),
+  ['html uses the inline handler onerror='], html);
+
+test('splitHtml ends a comment where the browser ends it, so no handler hides behind it', () => {
+  handlerRefused(`<!-->${RUNS}-->`);
+  handlerRefused(`<!--->${RUNS}-->`);
+  handlerRefused(`<!-- old --!>${RUNS}-->`);
+  assert.deepEqual(splitHtml(`<!-- ${RUNS} --><!----><p>x</p>`, 'html').errors, []);
+});
+
+test('splitHtml separates and quotes attributes as the browser reads them', () => {
+  handlerRefused('<img/onerror=alert(1) src=x>');
+  handlerRefused('<img src="x"onerror=alert(1)>');
+  handlerRefused('<img alt=">" src=x onerror=alert(1)>');
+  handlerRefused(`<p title='>'></p>${RUNS}`);
+  handlerRefused(`<3 ${RUNS}`);
+  handlerRefused(`<a\u000btitle="x>${RUNS}">`);
+  assert.deepEqual(splitHtml(`<p title="onclick=go()" data-x='a onclick=b'>x</p>`, 'html').errors, []);
+});
+
+test('splitHtml refuses markup that hides the end of a text element or joins text into a tag', () => {
+  const first = (html) => splitHtml(html, 'html').errors[0] ?? '';
+  assert.match(first(`<textarea><p title="</textarea>${RUNS}"></textarea>`), /^html has <\/textarea inside a tag or comment/);
+  assert.match(first(`<noscript><!-- </noscript>${RUNS} --></noscript>`), /^html has <\/noscript inside a tag or comment/);
+  assert.match(first(`<textarea><style></textarea></style><p title="</textarea>${RUNS}">`), /^html has <\/textarea inside/);
+  handlerRefused(`<svg><title>${RUNS}</title></svg>`);
+  assert.deepEqual(splitHtml('<svg><title>Icon</title></svg><textarea>a < b</textarea>', 'html').errors, []);
+  assert.match(first('<<script type=module>export default () => {}</script>img src=x onerror=alert(1)>'), /^html has a '<' right before <script>/);
+});
+
+test('splitHtml stays linear on text made to make a scanner backtrack or rescan', () => {
+  // The same inputs as SingleFileHtmlTest. Reading the growing html string once per element made 40 000 styles take 3.5 s.
+  const start = performance.now();
+  for (const html of ['<a  '.repeat(130_000), '<style>p{}</style><b x=1>'.repeat(40_000), '<textarea></textareax>'.repeat(20_000)]) {
+    assert.deepEqual(splitHtml(html, 'html').errors, []);
+  }
+  const millis = performance.now() - start;
+  assert.ok(millis < 2000, `${Math.round(millis)} ms`);
+});
+
+test('a panel html is checked for handlers with the same reading', async () => {
+  const p = errors(await checkSource(`uiPanel(title: 'P', module: 'export default () => {}', html: '<!--><img/onerror=alert(1) src=x>-->')`));
+  assert.equal(p.length, 1, JSON.stringify(p));
+  assert.match(p[0].message, /html uses the inline handler onerror=;/);
+});
+
 test('formFrom paths are checked like the controller checks them, and inline fields next to it are errors', async () => {
   const p = errors(await checkSource(`
     uiParameter(name: 'A', formFrom: '../secrets')

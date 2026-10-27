@@ -308,22 +308,135 @@ async function checkModule(text, report, reportAt) {
 
 function checkHtml(html, report) {
   if (/<script[\s>]/i.test(html)) report('error', 'html contains <script>; scripts in html never run, put code in module');
-  const handler = /<[a-z][^>]*?\s(on[a-z]+)\s*=/gi;
-  for (const m of html.matchAll(handler)) {
-    report('error', `html uses the inline handler ${m[1]}=; Jenkins's CSP blocks it, attach the handler in module`);
+  // A panel's html is not split, so its scripts and styles stay in the markup the browser reads.
+  const scan = scanHandlers(html, [...TEXT_ELEMENTS, 'script', 'style']);
+  for (const name of scan.handlers) {
+    report('error', `html uses the inline handler ${name}=; Jenkins's CSP blocks it, attach the handler in module`);
   }
+  if (scan.hidden) report('error', hiddenEnd('html', scan.hidden));
 }
 
-const HANDLER = /\s(on[a-z]+)\s*=/i;
+const HANDLER = /^on[a-z]+$/i;
 const SRC = /(?:^|[\s/])src(?:\s*=|[\s/]|$)/i;
 const MODULE_TYPE = /(?:^|[\s/])type\s*=\s*(?:"\s*module\s*"|'\s*module\s*'|module(?=[\s/]|$))/i;
-const START_TAG = /^<(script|style)(?=[\s/>]|$)/i;
+// Elements whose content HTML reads as text up to their end tag, while inside SVG or MathML the
+// same content is markup. The handler check reads it as markup and refuses a tag or comment that
+// hides the end tag, so both readings see the same tags. Mirrors SingleFileHtml.java.
+const TEXT_ELEMENTS = ['textarea', 'title', 'noscript', 'iframe', 'noembed', 'noframes', 'xmp'];
+
+const isSpace = (c) => c === ' ' || c === '\t' || c === '\n' || c === '\f' || c === '\r';
+const isLetter = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+const asciiLower = (s) => s.replace(/[A-Z]/g, (c) => c.toLowerCase());
+const hiddenEnd = (what, name) => `${what} has </${name} inside a tag or comment; a browser ends the <${name}> there`
+  + ' and reads what follows as markup, so move it out of the tag or comment';
+
+/**
+ * The markup that starts at the '<' at lt, read as the HTML tokenizer reads it:
+ * { end, startTag, handler }. end is exclusive, -1 when the text ends inside a
+ * tag, lt + 1 when the '<' is text. A start tag has its lowercase name and its
+ * first on*= attribute.
+ */
+function construct(html, lt) {
+  const n = html.length;
+  const next = html[lt + 1] ?? '';
+  if (isLetter(next)) return tag(html, lt + 1, true);
+  if (html.startsWith('<!--', lt)) {
+    // "<!-->" and "<!--->" are whole comments, and "--!>" ends one too.
+    const dashes = html.indexOf('-->', lt + 2);
+    const bang = html.indexOf('--!>', lt + 4);
+    const end = dashes >= 0 && (bang < 0 || dashes < bang) ? dashes + 3 : bang >= 0 ? bang + 4 : n;
+    return { end };
+  }
+  if (next === '/' && isLetter(html[lt + 2] ?? '')) return tag(html, lt + 2, false);
+  if (next === '!' || next === '?' || next === '/') {
+    // A doctype or a bogus comment, "</>" included: it ends at the first '>'.
+    const gt = html.indexOf('>', lt + 2);
+    return { end: gt < 0 ? n : gt + 1 };
+  }
+  return { end: lt + 1 };
+}
+
+// A tag from its name at `at` to its '>': a quoted value may hold '>', and '/' separates attributes.
+function tag(html, at, start) {
+  const n = html.length;
+  let i = at;
+  while (i < n && !isSpace(html[i]) && html[i] !== '/' && html[i] !== '>') i++;
+  const name = asciiLower(html.slice(at, i));
+  let handler = null;
+  while (i < n) {
+    const c = html[i];
+    if (c === '>') return start ? { end: i + 1, startTag: name, handler } : { end: i + 1 };
+    if (isSpace(c) || c === '/') { i++; continue; }
+    // An attribute name runs to a space, '/', '>' or '='; a '=' in first place belongs to it.
+    const nameStart = i++;
+    while (i < n && !isSpace(html[i]) && !'/>='.includes(html[i])) i++;
+    const attribute = html.slice(nameStart, i);
+    while (i < n && isSpace(html[i])) i++;
+    if (i >= n || html[i] !== '=') continue;
+    if (handler === null && HANDLER.test(attribute)) handler = attribute;
+    i++;
+    while (i < n && isSpace(html[i])) i++;
+    if (html[i] === '"' || html[i] === "'") {
+      const quote = html.indexOf(html[i], i + 1);
+      if (quote < 0) return { end: -1 };
+      // The next attribute may follow the quote without a space.
+      i = quote + 1;
+    } else {
+      while (i < n && !isSpace(html[i]) && html[i] !== '>') i++;
+    }
+  }
+  return { end: -1 };
+}
+
+/**
+ * The on*= attributes of the start tags a browser reads in html, and the name
+ * of a text element whose end tag a tag or comment hides ({ handlers, hidden }).
+ * HTML ends a text element at the first </name followed by a space, '/' or
+ * '>'; each name's search only moves forward, so the scan stays linear.
+ */
+function scanHandlers(html, textElements) {
+  const ends = new Map(); // name -> { end, searched, open }
+  const handlers = [];
+  let i = 0;
+  while (i < html.length) {
+    const lt = html.indexOf('<', i);
+    if (lt < 0) break;
+    const c = construct(html, lt);
+    const end = c.end < 0 ? html.length : c.end;
+    for (const [name, e] of ends) {
+      if (!e.open) continue;
+      if (e.end <= lt) e.open = false;
+      else if (e.end < end) return { handlers, hidden: name };
+    }
+    if (c.handler) handlers.push(c.handler);
+    if (c.startTag && textElements.includes(c.startTag)) {
+      const e = ends.get(c.startTag) ?? { end: -1, searched: 0, open: false };
+      ends.set(c.startTag, e);
+      if (e.end < end && e.searched < html.length) {
+        e.end = -1;
+        for (let j = Math.max(end, e.searched); (j = html.indexOf('</', j)) >= 0; j += 2) {
+          const after = html[j + 2 + c.startTag.length] ?? '';
+          if (asciiLower(html.slice(j + 2, j + 2 + c.startTag.length)) === c.startTag && (isSpace(after) || after === '/' || after === '>')) {
+            e.end = j;
+            break;
+          }
+        }
+        e.searched = e.end < 0 ? html.length : e.end;
+      }
+      e.open = e.end >= 0;
+    }
+    i = end;
+  }
+  return { handlers, hidden: null };
+}
 
 /**
  * Splits a uiParameter's html the way the controller does (SingleFileHtml.java):
  * one <script type="module"> becomes the module, every <style> becomes css, the
  * rest stays html. A script ends at the first </script and a style at the first
- * </style, as in HTML. Returns { module, moduleStart, html, css, errors }.
+ * </style, as in HTML. Comments and tags are read as the HTML tokenizer reads
+ * them, and the html that is left is checked for inline handlers. Returns
+ * { module, moduleStart, html, css, errors }.
  */
 export function splitHtml(html, what) {
   const scriptErrors = [];
@@ -337,21 +450,19 @@ export function splitHtml(html, what) {
     const lt = html.indexOf('<', i);
     if (lt < 0) { rest += html.slice(i); break; }
     rest += html.slice(i, lt);
-    if (html.startsWith('<!--', lt)) {
-      const end = html.indexOf('-->', lt + 4);
-      const stop = end < 0 ? html.length : end + 3;
-      rest += html.slice(lt, stop);
-      i = stop;
-      continue;
+    const c = construct(html, lt);
+    // The text ends inside a tag; the browser drops it.
+    if (c.end < 0) { rest += html.slice(lt); break; }
+    const name = c.startTag;
+    if (name !== 'script' && name !== 'style') { rest += html.slice(lt, c.end); i = c.end; continue; }
+    // rest ends with a '<' read as text exactly when one stands right before this tag
+    // (reading rest itself would flatten the string on every element).
+    if (html[lt - 1] === '<') {
+      scriptErrors.push(`${what} has a '<' right before <${name}>; taking the element out would join it`
+        + ' to the text after the element, so write it as &lt;');
     }
-    const gt = html.indexOf('>', lt);
-    if (gt < 0) { rest += html.slice(lt); break; }
+    const gt = c.end - 1;
     const startTag = html.slice(lt, gt + 1);
-    const handler = /[a-z]/i.test(html[lt + 1] ?? '') && HANDLER.exec(startTag);
-    if (handler) handlerErrors.push(`${what} uses the inline handler ${handler[1]}=; Jenkins's CSP blocks it, attach the handler in the module`);
-    const tag = START_TAG.exec(html.slice(lt, lt + 8));
-    if (!tag) { rest += startTag; i = gt + 1; continue; }
-    const name = tag[1].toLowerCase();
     const closeRe = new RegExp(`</${name}`, 'ig');
     closeRe.lastIndex = gt + 1;
     const close = closeRe.exec(html)?.index ?? -1;
@@ -373,6 +484,11 @@ export function splitHtml(html, what) {
       moduleStart = gt + 1;
     }
   }
+  const scan = scanHandlers(rest, TEXT_ELEMENTS);
+  for (const name of scan.handlers) {
+    handlerErrors.push(`${what} uses the inline handler ${name}=; Jenkins's CSP blocks it, attach the handler in the module`);
+  }
+  if (scan.hidden) handlerErrors.push(hiddenEnd(what, scan.hidden));
   const blank = (s) => s === null || s.trim() === '';
   return {
     module: blank(module) ? null : module,
