@@ -8,7 +8,8 @@ import * as playwright from '@playwright/test';
 
 const engine = process.argv[2] || 'chromium';
 
-const CSP = "base-uri 'none'; default-src 'self'; form-action 'self'; frame-ancestors 'self'; img-src 'self' data:; script-src 'report-sample' 'self' usage.jenkins.io; style-src 'report-sample' 'self' 'unsafe-inline'";
+// Jenkins 2.541's header, report-uri included (WebKit ignores a report-only policy without one).
+const CSP = "base-uri 'none'; default-src 'self'; form-action 'self'; frame-ancestors 'self'; img-src 'self' data:; script-src 'report-sample' 'self' usage.jenkins.io; style-src 'report-sample' 'self' 'unsafe-inline'; report-uri http://127.0.0.1:4332/csp-report";
 const bundle = (id) => readFileSync(new URL(`../../src/main/webapp/runtimes/${id}.js`, import.meta.url), 'utf8');
 
 const probe = `
@@ -45,7 +46,17 @@ const FILES = {
   '/vue3.js': ['text/javascript', bundle('vue3')],
 };
 let header = 'content-security-policy';
+let reports = [];
 const server = http.createServer((req, res) => {
+  if (req.url === '/csp-report') {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      try { const r = JSON.parse(body)['csp-report']; reports.push(`${r['violated-directive']} ${r['blocked-uri']} ${r.disposition || ''}`.trim()); } catch { reports.push('unparsed report'); }
+      res.writeHead(204); res.end();
+    });
+    return;
+  }
   const f = FILES[req.url.split('?')[0]];
   if (!f) { res.writeHead(404); res.end(); return; }
   res.writeHead(200, { 'content-type': f[0], [header]: CSP });
@@ -57,6 +68,7 @@ const browser = await playwright[engine].launch();
 console.log(`=== eval runtime probe: ${engine} ${browser.version()}`);
 for (const mode of ['content-security-policy', 'content-security-policy-report-only']) {
   header = mode;
+  reports = [];
   const page = await browser.newPage();
   const messages = [];
   page.on('console', (m) => ['error', 'warning'].includes(m.type()) && messages.push(`${m.type()}: ${m.text().replace(/\s+/g, ' ').slice(0, 150)}`));
@@ -70,6 +82,11 @@ for (const mode of ['content-security-policy', 'content-security-policy-report-o
   const counts = new Map();
   for (const m of messages) counts.set(m, (counts.get(m) || 0) + 1);
   for (const [m, n] of counts) console.log(`  ${n}x ${m}`);
+  await page.waitForTimeout(1000); // reports are sent in the background
+  const sent = new Map();
+  for (const r of reports) sent.set(r, (sent.get(r) || 0) + 1);
+  for (const [r, n] of sent) console.log(`  ${n}x report sent: ${r}`);
+  if (!reports.length) console.log('  no report sent');
   await page.close();
 }
 await browser.close();

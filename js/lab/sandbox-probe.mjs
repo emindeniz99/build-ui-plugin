@@ -11,8 +11,9 @@ import http from 'node:http';
 import * as playwright from '@playwright/test';
 
 const engine = process.argv[2] || 'chromium';
-const CSP = "base-uri 'none'; default-src 'self'; form-action 'self'; frame-ancestors 'self'; img-src 'self' data:; script-src 'report-sample' 'self' usage.jenkins.io; style-src 'report-sample' 'self' 'unsafe-inline'";
 const ORIGIN = 'http://127.0.0.1:4330';
+// Jenkins 2.541's header, report-uri included (WebKit ignores a report-only policy without one).
+const CSP = `base-uri 'none'; default-src 'self'; form-action 'self'; frame-ancestors 'self'; img-src 'self' data:; script-src 'report-sample' 'self' usage.jenkins.io; style-src 'report-sample' 'self' 'unsafe-inline'; report-uri ${ORIGIN}/csp-report`;
 const CSP_ORIGIN = CSP.replace("script-src 'report-sample' 'self'", `script-src 'report-sample' ${ORIGIN}`);
 const seen = [];
 
@@ -52,7 +53,8 @@ const FILES = {
     try { new Function('return 1')(); report('eval', true); } catch (e) { report('eval', false, String(e).slice(0, 80)); }
     report('frame-origin', true, String(self.origin));
     try { parent.document.title; report('parent-dom', true); } catch (e) { report('parent-dom', false, String(e).slice(0, 60)); }
-    try { document.cookie; report('document-cookie', true); } catch (e) { report('document-cookie', false, String(e).slice(0, 60)); }
+    // The page has a cookie scripts may read (visible=1), so an empty answer means no access.
+    try { report('document-cookie', true, JSON.stringify(document.cookie)); } catch (e) { report('document-cookie', false, String(e).slice(0, 60)); }
     for (const [name, url] of [['fetch-plain', '/data-plain'], ['fetch-cors', '/data-cors']]) {
       fetch(url, { credentials: 'include' }).then(r => r.text())
         .then(t => report(name, true, t), e => report(name, false, String(e).slice(0, 60)));
@@ -67,7 +69,7 @@ const FILES = {
   '/dynamic-cors.mjs': ['text/javascript', post('dynamic-import-cors')],
   '/data-plain': ['text/plain', 'plain'],
   '/data-cors': ['text/plain', 'cors'],
-  '/pixel.gif': ['image/gif', Buffer.from('R0lGODlhAQABAAAAACw=', 'base64')],
+  '/pixel.gif': ['image/gif', Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64')],
 };
 const PROBES = ['inline-script', 'classic-same-origin', 'module-no-cors-header', 'module-cors-header', 'dynamic-import-cors',
   'blob-import', 'eval', 'frame-origin', 'parent-dom', 'document-cookie', 'fetch-plain', 'fetch-cors', 'img-same-origin', 'message-port'];
@@ -75,11 +77,13 @@ const PROBES = ['inline-script', 'classic-same-origin', 'module-no-cors-header',
 const server = http.createServer((req, res) => {
   const [path, query] = req.url.split('?');
   const f = FILES[path];
-  seen.push(`${req.url} cookie=${req.headers.cookie ? 'yes' : 'no'} origin=${req.headers.origin || '-'}`);
+  seen.push(`${req.method} ${req.url} cookie=${req.headers.cookie ? 'yes' : 'no'} origin=${req.headers.origin || '-'}`);
+  if (path === '/csp-report') { res.writeHead(204); res.end(); return; }
   if (!f) { res.writeHead(404); res.end(); return; }
   const headers = { 'content-type': f[0], 'content-security-policy': query === 'origin' ? CSP_ORIGIN : CSP, 'x-frame-options': 'sameorigin' };
   if (path.includes('cors')) headers['access-control-allow-origin'] = '*';
-  if (path === '/parent.html') headers['set-cookie'] = 'JSESSIONID=abc; Path=/; HttpOnly';
+  // Jenkins's session cookie, and one that page scripts may read.
+  if (path === '/parent.html') headers['set-cookie'] = ['JSESSIONID=abc; Path=/; HttpOnly; SameSite=Lax', 'visible=1; Path=/; SameSite=Lax'];
   res.writeHead(200, headers);
   res.end(f[1]);
 });
