@@ -28,6 +28,7 @@ public class UiPanelStep extends Step {
     private String html;
     private String css;
     private String data = "{}";
+    private boolean sandbox;
 
     @DataBoundConstructor
     public UiPanelStep(@NonNull String title) {
@@ -83,9 +84,19 @@ public class UiPanelStep extends Step {
         this.data = Util.fixEmptyAndTrim(data) == null ? "{}" : Json.write(Json.parse(data, "data"));
     }
 
+    public boolean isSandbox() {
+        return sandbox;
+    }
+
+    /** Runs the panel's code in a sandboxed iframe, as {@code uiParameter(sandbox: true)} does. */
+    @DataBoundSetter
+    public void setSandbox(boolean sandbox) {
+        this.sandbox = sandbox;
+    }
+
     @Override
     public StepExecution start(StepContext context) {
-        return new Execution(context, new UiPanelAction(title, runtime, module, html, css, data));
+        return new Execution(context, new UiPanelAction(title, runtime, module, html, css, data, sandbox));
     }
 
     private static final class Execution extends SynchronousStepExecution<Void> {

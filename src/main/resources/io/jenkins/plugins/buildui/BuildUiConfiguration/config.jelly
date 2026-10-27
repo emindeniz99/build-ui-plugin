@@ -7,6 +7,9 @@
     <f:entry field="allowEvalRuntimes" description="${%Off by default. Allows runtimes that compile templates with eval, such as vue3 and alpine3. They work only while Jenkins sends its Content Security Policy in report-only mode, and they stop working the day Jenkins enforces it. alpine3-csp, preact11-htm3 and schema-form need no eval.}">
       <f:checkbox title="${%Allow runtimes that need eval}"/>
     </f:entry>
+    <f:entry field="sandboxAll" description="${%Off by default. When on, the code of every form and panel runs in a sandboxed iframe, as if each one set sandbox: true. The code then cannot read the page, the cookies or Jenkins's API; it reaches data only through ui.query.}">
+      <f:checkbox title="${%Run all form code in a sandbox}"/>
+    </f:entry>
     <f:entry title="${%ArgoCD servers}" description="${%Servers whose application status build-ui forms may read through the argoCdApp data provider.}">
       <f:repeatableProperty field="argoCdServers" add="${%Add ArgoCD server}"/>
     </f:entry>

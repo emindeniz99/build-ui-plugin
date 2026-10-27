@@ -36,7 +36,7 @@ class UiPanelStepTest {
     @Test
     void aRuntimeReadFromBuildXmlIsCheckedLikeOneFromTheStep(JenkinsRule j) {
         // host.js imports runtimes/<id>.js, so a path stored in build.xml would load any same-origin script.
-        String xml = Run.XSTREAM2.toXML(new UiPanelAction("t", Runtimes.NONE, null, null, null, "{}"));
+        String xml = Run.XSTREAM2.toXML(new UiPanelAction("t", Runtimes.NONE, null, null, null, "{}", false));
         assertTrue(xml.contains("<runtime>none</runtime>"), xml);
         UiPanelAction loaded = (UiPanelAction) Run.XSTREAM2.fromXML(xml.replace("<runtime>none</runtime>", "<runtime>../../ws/evil</runtime>"));
         assertEquals(Runtimes.PREACT, loaded.getRuntime());

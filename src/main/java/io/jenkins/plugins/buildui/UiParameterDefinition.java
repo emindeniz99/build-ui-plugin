@@ -48,6 +48,7 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
     private String css;
     private String schema;
     private String defaultJson;
+    private boolean sandbox;
 
     private transient Schema compiled;
 
@@ -130,6 +131,21 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
             Json.parse(d, "defaultJson");
         }
         this.defaultJson = d;
+    }
+
+    /** Whether the form asks to run its code in a sandboxed iframe; see {@link #isSandboxed()}. */
+    public boolean isSandbox() {
+        return sandbox;
+    }
+
+    @DataBoundSetter
+    public void setSandbox(boolean sandbox) {
+        this.sandbox = sandbox;
+    }
+
+    /** True when this form's code runs in a sandboxed iframe: it asks for it, or an admin sandboxes all forms. */
+    public boolean isSandboxed() {
+        return SandboxAction.applies(sandbox, module, html, css);
     }
 
     /** Errors of {@code json} against the schema; empty when it is valid. */
@@ -291,6 +307,7 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
         copy.module = module;
         copy.html = html;
         copy.css = css;
+        copy.sandbox = sandbox;
         copy.setSchema(schema);
         copy.setDefaultJson(json);
         return copy;
@@ -319,7 +336,7 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
 
     /** False only when an admin requires approval and this form's code has none yet. */
     public boolean isApproved() {
-        return FormApproval.allowed(runtime, module, html, css, requestJob(), getName());
+        return FormApproval.allowed(runtime, module, html, css, isSandboxed(), requestJob(), getName());
     }
 
     /** Content keys for the view; registering here keeps the store filled after a restart. */
@@ -340,7 +357,7 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
 
     @Override
     public int hashCode() {
-        return Objects.hash(getName(), getDescription(), runtime, module, html, css, schema, defaultJson);
+        return Objects.hash(getName(), getDescription(), runtime, module, html, css, schema, defaultJson, sandbox);
     }
 
     @Override
@@ -354,7 +371,8 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
                 && Objects.equals(html, o.html)
                 && Objects.equals(css, o.css)
                 && Objects.equals(schema, o.schema)
-                && Objects.equals(defaultJson, o.defaultJson);
+                && Objects.equals(defaultJson, o.defaultJson)
+                && sandbox == o.sandbox;
     }
 
     @Extension

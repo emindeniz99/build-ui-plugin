@@ -17,13 +17,14 @@ frontend build step.
   the Pipeline `build` step.
 - **Ease test:** a reference form with a conditional field, a multi-select,
   server data and a reusable section fits in about 60 Jenkinsfile lines.
-- **Out of scope for v1:** a component library, TSX, and sandboxing
-  untrusted code. Renderers that need eval (`alpine3`, `vue3`) ship off by
-  default, behind an admin setting.
+- **Out of scope for v1:** a component library, TSX, and mirroring a
+  sandboxed form's DOM into the page. Renderers that need eval (`alpine3`,
+  `vue3`) ship off by default, behind an admin setting.
 - **Known limit:** with the default settings, anyone who can push a
   Jenkinsfile can run JavaScript in the browser of every user who opens the
   form, admins included. Run it on a Jenkins where you trust everyone with
-  push access, or turn on [approval of form code](#approval-of-form-code-optional).
+  push access, or turn on [approval of form code](#approval-of-form-code-optional)
+  or [sandboxed forms](#sandboxed-forms-optional).
 
 ## Status
 
@@ -92,6 +93,7 @@ registers it; *Build with Parameters* shows the form from the second run on.
 | `schema` | JSON Schema the controller checks every value against (subset below) |
 | `defaultJson` | The value for builds that bring none (cron, `build` without parameters) |
 | `description` | Shown above the form |
+| `sandbox` | `true` runs the form's code in a sandboxed iframe ([below](#sandboxed-forms-optional)); default `false` |
 
 ### The module contract
 
@@ -273,7 +275,7 @@ uiPanel title: 'Deploy summary', data: '{"env":"staging","services":["api"]}',
 ```
 
 `uiPanel` takes `title`, `data` (JSON, read as `ui.value`), `module`, `html`,
-`css` and `runtime`, and draws on the build's page with the same contract.
+`css`, `runtime` and `sandbox`, and draws on the build's page with the same contract.
 `ui.job` is the build's job; `ui.schema` is `null`, because a panel has no
 schema.
 
@@ -314,6 +316,63 @@ With approval on:
   off. With *Force sandbox* on, only an admin opening the form adds it to the
   pending list; views by other users before or after leave the list as it is.
 
+### Sandboxed forms (optional)
+
+A form or panel with `sandbox: true` runs its module, HTML and CSS inside
+`<iframe sandbox="allow-scripts">` instead of on the Jenkins page. To sandbox
+every form, an admin ticks *Run all form code in a sandbox* under Manage
+Jenkins » System » Build UI, or sets it with Configuration as Code. Both are
+off by default.
+
+```yaml
+unclassified:
+  buildUi:
+    sandboxAll: true
+```
+
+The module keeps the same contract: `root` sits in a shadow root, `ui.value`,
+`ui.setValue`, `ui.query`, `ui.job`, `ui.name`, `ui.schema`, `runtime` and
+`signal` work as on the page, and the frame grows with its content. What
+changes is what the code can reach. The frame has an origin of its own, so
+in Chromium the code:
+
+- cannot read or change the Jenkins page (`parent.document` throws);
+- cannot read cookies (`document.cookie` throws), and its own requests to
+  Jenkins carry none;
+- cannot call the Jenkins API with `fetch`, because Jenkins sends no CORS
+  headers to the frame;
+- cannot navigate the page;
+- under Jenkins's CSP, cannot fetch from another host, load an image from
+  one, or navigate its frame to one.
+
+The `sandbox` attribute also withholds pop-ups and form submission (HTML
+standard; not tested here).
+
+It reaches Jenkins only through `ui.query`, which the page runs for it with
+your session, as it does for a form outside the sandbox. The submitted
+value still goes through the JSON field and the controller's schema check.
+
+What the sandbox does not stop:
+
+- The code can draw anything inside its own frame, including text that
+  misleads you.
+- The code can read through `ui.query` whatever you can read and put it into
+  the value you submit. The build, which the Jenkinsfile author controls, then
+  receives it.
+- Browsers have channels that Jenkins's CSP does not cover, such as WebRTC.
+  We have not tested whether a sandboxed form can send data out through them.
+- Only Chromium is tested. Firefox and Safari should behave the same, but
+  nobody has checked.
+
+With [approval](#approval-of-form-code-optional) on, a sandboxed form still
+waits for an admin. Code approved for the page may also run in the sandbox;
+code approved only for the sandbox needs a fresh approval once its
+Jenkinsfile drops `sandbox: true`.
+
+For authors: the frame is a separate document, so styles and theme come from
+`css` and from the Jenkins theme colors the page copies into the frame when
+it loads. A theme change after that does not reach the frame.
+
 ### Validation and limits
 
 The controller checks every value, whatever started the build: the form,
@@ -352,8 +411,9 @@ Jenkinsfile line numbers: module syntax errors, `import` statements, a missing
 `export default`, `<script>` and inline handlers in `html`, schema keywords
 and keyword values the controller rejects, invalid JSON in `schema`,
 `defaultJson` and `data` (duplicate keys and the limits above included),
-Groovy escapes such as `\d` that Jenkins cannot compile, and unknown
-runtimes. A `pattern` that JavaScript cannot compile gets a warning, since
+Groovy escapes such as `\d` that Jenkins cannot compile, unknown
+runtimes, a `sandbox` that is not `true` or `false`, and `sandbox: true`
+on a form with no code to sandbox. A `pattern` that JavaScript cannot compile gets a warning, since
 the controller compiles it as Java. It warns about runtimes that need eval. It reads string literals only; a field built from
 variables or a `"${…}"` GString gets a warning. It does not check `defaultJson`
 against the schema; the controller does that when a build uses the default. A

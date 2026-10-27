@@ -73,4 +73,22 @@ class ConfigurationAsCodeTest {
         ConfigurationAsCode.get().configure(file.toString());
         assertTrue(BuildUiConfiguration.get().isAllowEvalRuntimes());
     }
+
+    @Test
+    void sandboxingAllFormsIsOffByDefaultAndRoundTripsThroughYaml(JenkinsRule j, @TempDir Path dir) throws Exception {
+        assertFalse(BuildUiConfiguration.get().isSandboxAll(), "the sandbox must be off unless an admin asks");
+        Path file = dir.resolve("jenkins.yaml");
+        Files.writeString(file, """
+                unclassified:
+                  buildUi:
+                    sandboxAll: true
+                """);
+        ConfigurationAsCode.get().configure(file.toString());
+        assertTrue(BuildUiConfiguration.get().isSandboxAll());
+
+        ConfiguratorRegistry registry = ConfiguratorRegistry.get();
+        CNode exported = registry.lookupOrFail(BuildUiConfiguration.class)
+                .describe(BuildUiConfiguration.get(), new ConfigurationContext(registry));
+        assertTrue(exported.toString().contains("sandboxAll=true"), exported.toString());
+    }
 }

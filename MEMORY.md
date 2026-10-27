@@ -8,7 +8,7 @@ significant work; prune past ~100 lines. Details: `.claude/skills/memory/SKILL.m
 Feature-complete for 0.1.0 and tested on 2.541.1 and 2.580.1 (47 JenkinsRule,
 18 plain unit, 26 browser, 20 checker tests; Maven counts 74 Java tests: our 65
 plus 9 from the plugin parent, 1 skipped): parameter, `input` step, `uiPanel`,
-`schema-form`, `jenkinsRuns`, `gitRefs`, `argoCdApp`, optional approval, the Jenkinsfile
+`schema-form`, `jenkinsRuns`, `gitRefs`, `argoCdApp`, optional approval, optional sandboxed forms, the Jenkinsfile
 checker, accessibility checks, runtimes `alpine3-csp`, and `alpine3`/`vue3`
 behind `allowEvalRuntimes` (2.541.1 only so far: +9 JenkinsRule, +7 browser,
 +1 checker test). Release workflow ready; no tag pushed (owner
@@ -37,6 +37,9 @@ never run locally (only Chromium is installed here). Open items:
 - 2026-10-23: x-git-ref checks run on every queued build (defaults included) in RefGuard, a QueueTaskDispatcher that lists refs on a pool thread and cancels the item; never in QueueGuard — review finding: Git I/O under the queue lock stalled every job
 - 2026-10-23: Dependabot cooldowns for jenkins-ui: minor and patch 7 days, matching pnpm minimumReleaseAge; major 30 days
 - 2026-10-23: alpine3-csp ships like any runtime; alpine3 and vue3 need eval and sit behind allowEvalRuntimes (off) — they break the day CSP is enforced; host.js probes eval in the browser because a proxy may add its own CSP
+- 2026-10-23: sandbox = isolated `<iframe sandbox="allow-scripts">`, not DOM mirroring (owner); opt-in per form plus admin `sandboxAll`, off by default
+- 2026-10-23: sandboxed module loads through a one-time token (128 bits, single use, 60 s, 10 000 max) from an unprotected action with CORS `*`; the protected frame endpoint does the Overall/Read check
+- 2026-10-23: approval text marks sandboxed code; a sandbox-only approval does not cover the same code unsandboxed, a page approval covers the sandbox
 
 ## Learnings
 
@@ -65,8 +68,15 @@ never run locally (only Chromium is installed here). Open items:
 - 2026-10-23: XStream (config.xml, build.xml) sets fields without setters; validate in readResolve, and do not throw there (robust converters drop the element silently)
 - 2026-10-23: Stapler binds only keys a form sends; a GlobalConfiguration with a repeatable list must reset it in configure()
 - 2026-10-23: HttpRequest.timeout ends when headers arrive (JDK 17/21); bound the body with sendAsync().get(timeout)
+- 2026-10-23: sandboxed frame: Jenkins CSP applies to the frame document; page `default-src 'self'` stops the frame navigating to another host; Playwright reports CSP-blocked images as failed with "csp"
+- 2026-10-23: a `display: block` host lets child margins collapse out, so a ResizeObserver height is short; use `display: flow-root`
+- 2026-10-23: axe runs page-level rules (landmark-one-main, page-has-heading-one, region) on an iframe's document; prove axe reaches the frame with a deliberate violation
+- 2026-10-23: Stapler answers 500 for a decoded `..` path segment before plugin code runs
+- 2026-10-23: `pnpm run` (pnpm 12) reconciled the shared node_modules before running a script ("Packages: -26"); run `node scripts/...` directly against a symlinked node_modules
 
 ## Done
+
+- 2026-10-23: sandboxed forms (iframe, token endpoint, MessageChannel protocol), 15 JenkinsRule + 10 browser + 1 checker tests on 2.541.1
 
 - 2026-10-23: argoCdApp provider, JCasC, accessibility suite, example Jenkinsfiles under e2e, full suites green on 2.541.1 and 2.580.1
 - 2026-10-23: checker CLI, Preact vs Solid 2 comparison, gitRefs provider, release workflow and CHANGELOG for 0.1.0

@@ -27,16 +27,22 @@ public final class FormApproval {
      * Whether this code may run in the browser. Unapproved code is added to the
      * pending list, one entry per form: a newer version of a form replaces its
      * older pending entry.
+     *
+     * <p>A sandboxed form's text says so, because an admin may approve code
+     * only for the sandbox; that approval must not carry over when the
+     * Jenkinsfile drops {@code sandbox: true}. The other way round is safe:
+     * code approved to run on the page may also run in the sandbox.
      */
     static boolean allowed(String runtime, @CheckForNull String module, @CheckForNull String html,
-            @CheckForNull String css, @CheckForNull Job<?, ?> job, String form) {
+            @CheckForNull String css, boolean sandboxed, @CheckForNull Job<?, ?> job, String form) {
         if (!BuildUiConfiguration.get().isRequireApproval() || (module == null && html == null && css == null)) {
             return true;
         }
-        String text = text(runtime, module, html, css);
+        String text = text(runtime, module, html, css, sandboxed);
         ScriptApproval approval = ScriptApproval.get();
         Language language = ExtensionList.lookupSingleton(FormLanguage.class);
-        if (approval.isScriptApproved(text, language)) {
+        if (approval.isScriptApproved(text, language)
+                || (sandboxed && approval.isScriptApproved(text(runtime, module, html, css, false), language))) {
             return true;
         }
         if (approval.isForceSandboxForCurrentUser()) {
@@ -80,8 +86,10 @@ public final class FormApproval {
     }
 
     /** The text an admin reviews: everything the browser would load for this form. */
-    static String text(String runtime, @CheckForNull String module, @CheckForNull String html, @CheckForNull String css) {
-        StringBuilder b = new StringBuilder("// build-ui form, runtime ").append(runtime).append('\n');
+    static String text(String runtime, @CheckForNull String module, @CheckForNull String html, @CheckForNull String css,
+            boolean sandboxed) {
+        StringBuilder b = new StringBuilder("// build-ui form, runtime ").append(runtime)
+                .append(sandboxed ? ", sandboxed" : "").append('\n');
         if (module != null) {
             b.append("// ---- module ----\n").append(module).append('\n');
         }

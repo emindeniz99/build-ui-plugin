@@ -183,6 +183,52 @@ class FormApprovalTest {
         assertTrue(pending().isEmpty());
     }
 
+    private void defineSandboxedForm(String module) throws Exception {
+        job.setDefinition(new CpsFlowDefinition("""
+                properties([parameters([uiParameter(name: 'CFG', sandbox: true, module: "%s")])])
+                """.formatted(module), true));
+        j.buildAndAssertSuccess(job);
+    }
+
+    @Test
+    void aSandboxedFormStillWaitsForApproval() throws Exception {
+        BuildUiConfiguration.get().setRequireApproval(true);
+        defineSandboxedForm(module("v1"));
+        String page = formPageAs("dev");
+        assertTrue(page.contains(NOTICE), "the sandbox limits what code can do, it does not replace the admin's review");
+        assertFalse(page.contains("build-ui-root"));
+        assertNull(ContentStore.get(moduleKey(module("v1"))), "no frame may load unapproved code");
+        assertTrue(pending().get(0).script.startsWith("// build-ui form, runtime preact11-htm3, sandboxed\n"),
+                "the admin must see that this code was submitted for the sandbox");
+
+        ScriptApproval.get().approveScript(pending().get(0).getHash());
+        assertTrue(formPageAs("dev").contains("data-sandbox=\"true\""), "approved sandboxed form must render in its frame");
+    }
+
+    @Test
+    void anApprovalForTheSandboxDoesNotCarryOverWhenTheJenkinsfileDropsTheSandbox() throws Exception {
+        BuildUiConfiguration.get().setRequireApproval(true);
+        defineSandboxedForm(module("v1"));
+        formPageAs("dev");
+        ScriptApproval.get().approveScript(pending().get(0).getHash());
+
+        defineForm(module("v1"));
+        assertTrue(formPageAs("dev").contains(NOTICE), "the same code on the page can read the session; it needs its own approval");
+    }
+
+    @Test
+    void codeApprovedForThePageMayAlsoRunInTheSandbox() throws Exception {
+        BuildUiConfiguration.get().setRequireApproval(true);
+        defineForm(module("v1"));
+        formPageAs("dev");
+        ScriptApproval.get().approveScript(pending().get(0).getHash());
+
+        defineSandboxedForm(module("v1"));
+        String page = formPageAs("dev");
+        assertFalse(page.contains(NOTICE), "turning the sandbox on must not cost a second approval");
+        assertTrue(page.contains("data-sandbox=\"true\""));
+    }
+
     @Test
     void panelCodeWaitsTooWhileItsDataStaysReadable() throws Exception {
         BuildUiConfiguration.get().setRequireApproval(true);

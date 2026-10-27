@@ -1,7 +1,7 @@
 // Bundles each runtime in js/runtimes into src/main/webapp/runtimes/<id>.js,
 // the files the plugin ships. `--check` rebuilds in memory and fails when a
 // shipped file is missing or out of date, so CI catches a forgotten rebuild.
-// Both modes fail when a bundle or host.js grows past its size budget.
+// Both modes fail when a bundle, host.js or the sandbox boot script grows past its size budget.
 import { build } from 'esbuild';
 import { readFileSync, existsSync, readdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -28,7 +28,7 @@ function banner(id) {
 
 // Size budgets, gzip bytes. Growing past one is a decision: raise it in the same commit.
 const BUDGETS = {
-  'preact11-htm3': 8 * 1024, 'schema-form': 9 * 1024, host: 3 * 1024,
+  'preact11-htm3': 8 * 1024, 'schema-form': 9 * 1024, host: 4 * 1024, 'sandbox-boot': 2 * 1024,
   'alpine3-csp': 25 * 1024, alpine3: 21 * 1024, vue3: 68 * 1024,
 };
 const gzipSize = (text) => gzipSync(text, { level: 9 }).length;
@@ -42,6 +42,7 @@ function budget(id, text) {
 
 let stale = 0;
 if (!budget('host', readFileSync(path.resolve(js, '../src/main/webapp/host.js'), 'utf8'))) stale++;
+if (!budget('sandbox-boot', readFileSync(path.resolve(js, '../src/main/webapp/sandbox/boot.js'), 'utf8'))) stale++;
 for (const file of readdirSync(path.join(js, 'runtimes')).filter((f) => f.endsWith('.mjs'))) {
   const id = file.slice(0, -'.mjs'.length);
   const target = path.join(out, `${id}.js`);

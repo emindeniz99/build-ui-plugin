@@ -13,6 +13,7 @@ baseSheet.replaceSync(`
   :host { display: block; color: var(--text-color, inherit); font: inherit; }
   /* Jenkins 2.541 --error-color is under 4.5:1 on its background; mixing in the text color keeps the hue and passes, in light and dark themes. */
   .build-ui-error { color: color-mix(in oklch, var(--error-color, #c00) 65%, var(--text-color, #000)); white-space: pre-wrap; }
+  iframe { display: block; width: 100%; height: 0; border: 0; }
 `);
 
 // Runtimes marked data-eval compile templates with eval. Enforced CSP blocks it,
@@ -57,15 +58,17 @@ function makeUi(el, textarea, signal) {
       value = next;
       textarea.value = JSON.stringify(next, null, 2);
     },
-    async query(id, args = {}, options = {}) {
-      const url = `${contentURL}query/${encodeURIComponent(id)}?args=${encodeURIComponent(JSON.stringify(args))}`;
-      const res = await fetch(url, { signal: options.signal || signal, credentials: 'same-origin', headers: { Accept: 'application/json' } });
-      // Jenkins answers some errors (403, 500, expired session) with HTML.
-      const body = parseJson(await res.text(), undefined);
-      if (!res.ok || body === undefined) throw new Error(body?.error || `query ${id} failed: HTTP ${res.status}`);
-      return body;
-    },
+    query: (id, args = {}, options = {}) => query(id, args, options.signal || signal),
   };
+}
+
+async function query(id, args, signal) {
+  const url = `${contentURL}query/${encodeURIComponent(id)}?args=${encodeURIComponent(JSON.stringify(args))}`;
+  const res = await fetch(url, { signal, credentials: 'same-origin', headers: { Accept: 'application/json' } });
+  // Jenkins answers some errors (403, 500, expired session) with HTML.
+  const body = parseJson(await res.text(), undefined);
+  if (!res.ok || body === undefined) throw new Error(body?.error || `query ${id} failed: HTTP ${res.status}`);
+  return body;
 }
 
 // Jenkins's .jenkins-input sets display, which beats the hidden attribute, so set both.
@@ -109,6 +112,11 @@ async function mountOne(el) {
   el.buildUiUnmount = unmount;
 
   try {
+    if (el.dataset.sandbox === 'true') {
+      await mountSandboxed(el, textarea, signal);
+      el.dataset.mounted = 'true';
+      return;
+    }
     const { runtime: runtimeId, module: moduleKey, css: cssKey, html: htmlKey } = el.dataset;
     if (el.dataset.eval === 'true' && blocksEval()) {
       throw new Error(`This form's runtime ${runtimeId} needs eval, which this Jenkins's Content Security Policy blocks.`);
@@ -146,6 +154,64 @@ async function mountOne(el) {
   } catch (error) {
     if (!signal.aborted) showError(el, textarea, error);
   }
+}
+
+// A sandboxed form runs in <iframe sandbox="allow-scripts">: an opaque origin with
+// no cookies, no Jenkins API and no access to this page. It gets its data in one
+// message carrying a MessagePort, and only that port is listened to afterwards.
+async function mountSandboxed(el, textarea, signal) {
+  const { runtime, module, css: cssKey, html: htmlKey } = el.dataset;
+  const [css, html] = await Promise.all([
+    cssKey ? fetchText(cssKey, signal) : null,
+    htmlKey ? fetchText(htmlKey, signal) : null,
+  ]);
+  const frame = document.createElement('iframe');
+  frame.setAttribute('sandbox', 'allow-scripts');
+  frame.title = el.dataset.name;
+  frame.src = `${contentURL}frame?runtime=${encodeURIComponent(runtime)}${module ? `&module=${encodeURIComponent(module)}` : ''}`;
+  const { port1: port, port2 } = new MessageChannel();
+  signal.addEventListener('abort', () => { port.postMessage({ type: 'unmount' }); port.close(); });
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('the sandboxed form did not start within 30 s')), 30_000);
+    const done = (fn, arg) => { clearTimeout(timer); fn(arg); };
+    port.onmessage = ({ data }) => {
+      if (signal.aborted || !data) return;
+      if (data.type === 'mounted') done(resolve);
+      else if (data.type === 'error') done(reject, new Error(String(data.message)));
+      else if (data.type === 'setValue' && typeof data.json === 'string') {
+        try { textarea.value = JSON.stringify(JSON.parse(data.json), null, 2); } catch { /* not JSON: keep the last value */ }
+      } else if (data.type === 'height' && Number.isFinite(data.height)) {
+        frame.style.height = `${Math.min(Math.max(Math.ceil(data.height), 0), 10_000)}px`;
+      } else if (data.type === 'query' && typeof data.provider === 'string') {
+        query(data.provider, data.args ?? {}, signal).then(
+          (body) => port.postMessage({ type: 'answer', id: data.id, ok: true, body }),
+          (e) => port.postMessage({ type: 'answer', id: data.id, ok: false, error: e && e.message ? e.message : String(e) }));
+      }
+    };
+    frame.addEventListener('load', () => {
+      frame.contentWindow.postMessage({
+        type: 'build-ui:init',
+        name: el.dataset.name,
+        job: el.dataset.job || '',
+        schema: el.dataset.schema ? parseJson(el.dataset.schema, null) : null,
+        value: parseJson(textarea.value, {}),
+        html,
+        css,
+        theme: theme(el),
+      }, '*', [port2]);
+    }, { once: true });
+    showTextarea(textarea, false);
+    el.shadowRoot.replaceChildren(frame);
+  });
+}
+
+// Jenkins's theme as computed here: its custom properties and the text style, so the frame matches the page.
+function theme(el) {
+  const style = getComputedStyle(el);
+  const out = {};
+  for (const name of style) if (name.startsWith('--')) out[name] = style.getPropertyValue(name);
+  for (const name of ['color', 'font-family', 'font-size', 'line-height', 'color-scheme']) out[name] = style.getPropertyValue(name);
+  return out;
 }
 
 function mountAll() {

@@ -3,6 +3,7 @@ package io.jenkins.plugins.buildui;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import hudson.Extension;
+import hudson.Util;
 import hudson.model.RootAction;
 import io.jenkins.plugins.buildui.json.Json;
 import jakarta.servlet.http.HttpServletResponse;
@@ -16,7 +17,8 @@ import org.kohsuke.stapler.StaplerResponse2;
 /**
  * {@code /build-ui/<sha256>.<ext>} serves form content that a parameter
  * definition registered in {@link ContentStore}; {@code /build-ui/query/<id>}
- * runs a {@link DataProvider} as the calling user. Both need Overall/Read,
+ * runs a {@link DataProvider} as the calling user; {@code /build-ui/frame}
+ * renders the document of a sandboxed form's iframe. All need Overall/Read,
  * which Jenkins checks for every {@link RootAction}.
  */
 @Extension
@@ -24,6 +26,7 @@ public class BuildUiAction implements RootAction {
 
     public static final String URL_NAME = "build-ui";
     private static final Pattern CONTENT_KEY = Pattern.compile("[0-9a-f]{64}\\.(mjs|css|html\\.txt)");
+    private static final Pattern MODULE_KEY = Pattern.compile("[0-9a-f]{64}\\.mjs");
 
     @Override
     public String getIconFileName() {
@@ -47,6 +50,10 @@ public class BuildUiAction implements RootAction {
             query(path.substring("/query/".length()), req, rsp);
             return;
         }
+        if (path.equals("/frame")) {
+            frame(req, rsp);
+            return;
+        }
         String key = path.startsWith("/") ? path.substring(1) : path;
         ContentStore.Content entry = CONTENT_KEY.matcher(key).matches() ? ContentStore.get(key) : null;
         if (entry == null) {
@@ -56,6 +63,32 @@ public class BuildUiAction implements RootAction {
         rsp.setContentType(entry.contentType());
         rsp.setHeader("Cache-Control", "private, max-age=31536000, immutable");
         rsp.getOutputStream().write(entry.bytes());
+    }
+
+    /**
+     * The iframe document of a sandboxed form: no code of its own, only the
+     * boot script and, in an attribute, a one-time URL of the form's module.
+     * The browser sends the viewer's cookies with this request, so this is
+     * where the permission check happens; the frame's own requests carry none.
+     */
+    private static void frame(StaplerRequest2 req, StaplerResponse2 rsp) throws IOException {
+        String runtime = req.getParameter("runtime");
+        String module = req.getParameter("module");
+        if (runtime == null || !Runtimes.ALL.contains(runtime)
+                || (module != null && (!MODULE_KEY.matcher(module).matches() || ContentStore.get(module) == null))) {
+            rsp.sendError(HttpServletResponse.SC_NOT_FOUND);
+            return;
+        }
+        String sandbox = req.getContextPath() + "/" + SandboxAction.URL_NAME + "/";
+        String moduleAttr = module == null ? ""
+                : " data-module=\"" + Util.escape(sandbox + "module/" + SandboxTokens.mint(module, System.currentTimeMillis()) + ".mjs") + "\"";
+        String html = "<!DOCTYPE html>\n<html lang=\"en\" data-runtime=\"" + runtime + "\"" + moduleAttr + ">"
+                + "<head><meta charset=\"utf-8\"><title>build-ui form</title>"
+                + "<script type=\"module\" src=\"" + Util.escape(sandbox + "boot.js") + "\"></script></head><body></body></html>\n";
+        rsp.setContentType("text/html;charset=UTF-8");
+        // The token is single use; a cached copy of this page would hand out a spent one.
+        rsp.setHeader("Cache-Control", "no-store");
+        rsp.getOutputStream().write(html.getBytes(StandardCharsets.UTF_8));
     }
 
     private static void query(String id, StaplerRequest2 req, StaplerResponse2 rsp) throws IOException {
