@@ -13,14 +13,15 @@ what we hope:
 - **Proposal:** a design choice not built yet.
 
 The project's goal and success test live in the [README](../README.md). The
-original RFC is issue #94; the design here replaces it where they disagree.
+project began as a written design request, called the RFC below, which is not
+part of this repository. Where the two disagree, this document wins.
 
 ## 1. Decisions
 
 | Topic | Decision | Reason |
 |---|---|---|
 | Plugin ID | `build-ui`, groupId `io.jenkins.plugins`, Jenkinsfile symbol `uiParameter` | All planned surfaces belong to a run. Follows update-center naming rules, so hosting there later costs nothing. |
-| Publishing | GitHub Releases (`.hpi`) first; the Jenkins update center at graduation | No hosting review on the critical path. |
+| Publishing | GitHub Releases (`.hpi`) first; the Jenkins update center later | No hosting review on the critical path. |
 | Jenkins / Java | Minimum 2.541.1, Java 17 bytecode; CI covers 2.541.x and the current LTS | 2.541 is the oldest LTS line with core CSP. |
 | Core | Framework-agnostic; knows only the `mount` contract (section 2) | A runtime can come and go without a core rewrite. |
 | v1 runtimes | `none`, `preact11-htm3`, `schema-form` and `alpine3-csp` | One stable React-style renderer, plain JS, a no-JS tier, and Alpine's CSP build, which passed strict CSP in section 6. |
@@ -32,7 +33,7 @@ original RFC is issue #94; the design here replaces it where they disagree.
 | Surfaces, in order | Build with Parameters form, then the `input` step, then panels on the build page (`uiPanel` step). All three are built. | The `input` step is the same form problem; build-page panels are a different product. |
 | Declarative no-JS tier | Built as the `schema-form` runtime, which exports `mount` itself, so a job needs no module | It needs nothing from the core and proves the contract with a second consumer. |
 | Data providers | `DataProvider` extension point; ships `jenkinsRuns` (Item/Read), `gitRefs` (Item/Build, optional Git plugin) and `argoCdApp` (admin-configured servers) | No provider takes a URL from the browser: `gitRefs` takes a job, plus a glob that picks among that job's remotes (section 16); `argoCdApp` takes a server name and an app name matched against an admin glob. That rules out SSRF through providers, and credentials stay on the controller. |
-| Git Parameter parity | `gitRefs` gains `repository`, `search`, `offset` and a `total` count; `x-git-repository` narrows `x-git-ref`. A JenkinsRule test compares both plugins' lists on one repository (section 16) | Issue #94: "do not replace it until parity is demonstrated". |
+| Git Parameter parity | `gitRefs` gains `repository`, `search`, `offset` and a `total` count; `x-git-repository` narrows `x-git-ref`. A JenkinsRule test compares both plugins' lists on one repository (section 16) | The RFC: "do not replace it until parity is demonstrated". |
 | Forms kept in the repository | `formFrom: '<folder>'` reads `form.mjs`, `form.html`, `form.css`, `schema.json` and `default.json` from the head of the job's branch through the SCM API (owner, 2026-10-27); section 14 | Jenkins stores parameter definitions in the job, so an inline form changes only after a build runs the new Jenkinsfile. Reading the branch head shows a push on the next page load. |
 | Single-file form | One `<script type="module">` and any `<style>` in `html` or `form.html` are split out on the controller (owner, 2026-10-27); section 14 | No browser loads HTML modules, and Jenkins's CSP blocks inline scripts. Design choice, not measured here. |
 | Parked | TSX through swc4j, Remote DOM (a worker whose DOM the page mirrors), Web Awesome pack | No current need justifies the cost; the iframe sandbox covers isolation. |
@@ -371,8 +372,8 @@ JenkinsRule tests, 8 browser tests).
   script-security approves everything, so `FormApprovalTest` covers approval
   through JenkinsRule pages instead.
 - A release: the workflow and `CHANGELOG.md` exist, and a local rehearsal of
-  its steps built `build-ui.hpi` 0.1.0. The first tag comes after
-  graduation (owner, 2026-10-27); README » Release lists the steps.
+  its steps built `build-ui.hpi` 0.1.0. No tag exists yet; README » Release
+  lists the steps before the first one.
 - Firefox and WebKit runs: CI runs them on the current LTS line, but this
   container has only Chromium, so no Firefox or WebKit run has happened yet.
 - `formFrom` with an SCM other than Git, or with a remote that needs
@@ -713,7 +714,7 @@ JenkinsRule on Jenkins 2.541.1, Git plugin 5.10.1, scm-api 728, git 2.43.0,
 
 ## 15. Local preview and module types (Tested)
 
-Issue #94 asks for local preview and editor checking. `js/test/preview.test.mjs`
+The RFC asks for local preview and editor checking. `js/test/preview.test.mjs`
 (10 Node tests), `js/preview/preview.spec.mjs` (3 Chromium tests, no Jenkins)
 and `js/test/typecheck.test.mjs` (4 Node tests) cover this section.
 
@@ -775,7 +776,7 @@ and `js/test/typecheck.test.mjs` (4 Node tests) cover this section.
 `IntegrationTest` (4), JenkinsRule on Jenkins 2.541.1 with local Git
 repositories, cover this section.
 
-Issue #94 lists what Git Parameter does that `gitRefs` must match before it
+The RFC lists what Git Parameter does that `gitRefs` must match before it
 can replace it: tagFilter, DESCENDING_SMART, repository matching,
 validation of the selected ref at submission, and bounded, paged or
 searchable results. The reference is Git Parameter 462.463 (the BOM's
