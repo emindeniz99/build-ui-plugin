@@ -5,10 +5,30 @@ work/
 # Lab and frontend tooling
 node_modules/
 
-# Local secrets (the repo root has the same safety net; it does not survive graduation)
+# Local secrets
 .env
 .env.*
+!.env.example
 
 # Playwright output
 js/test-results/
 js/playwright-report/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+.history
+
+# Claude Code local state; shared config such as CLAUDE.md stays committed
+.claude/settings.local.json
+.claude/todos/
+.claude/projects/
+.claude/shell-snapshots/
+.claude/statsig/
+.claude/.credentials.json

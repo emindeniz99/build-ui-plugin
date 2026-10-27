@@ -180,7 +180,7 @@ test('a formFrom folder renders on its own or through its Jenkinsfile, with --ro
   await withPreview({ target: jenkinsfile, root: path.join(examples, 'form-from') }, async ({ url }) => {
     assert.equal(attr(await (await fetch(url)).text(), 'data-name'), 'DEPLOY');
   });
-  // Without --root the Git top level is the playground, which has no forms/deploy.
+  // Without --root the Git top level is the repository root, which has no forms/deploy.
   await withPreview({ target: jenkinsfile }, async ({ url }) => {
     assert.match(await (await fetch(url)).text(), /formFrom folder 'forms\/deploy' is not under .*; pass --root with the repository root/);
   });

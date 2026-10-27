@@ -62,7 +62,7 @@ for (const file of readdirSync(path.join(js, 'runtimes')).filter((f) => f.endsWi
   if (check) {
     const shipped = existsSync(target) ? readFileSync(target, 'utf8') : null;
     if (fresh !== shipped) {
-      console.error(`${path.relative(js, target)} is out of date; run: pnpm --dir projects/jenkins-ui/js vendor`);
+      console.error(`${path.relative(js, target)} is out of date; run: pnpm --dir js vendor`);
       stale++;
     }
   } else {

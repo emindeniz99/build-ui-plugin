@@ -1,4 +1,4 @@
-# jenkins-ui
+# build-ui-plugin
 
 A Jenkins plugin (plugin ID `build-ui`) that lets a Jenkinsfile define a rich,
 reactive build form in HTML, CSS and browser-native JavaScript, with no
@@ -28,8 +28,8 @@ frontend build step.
 
 ## Status
 
-0.1.0 is ready to release (see [`CHANGELOG.md`](./CHANGELOG.md)). The first
-tag comes after graduation, from the standalone repository. Every test passed on Jenkins 2.541.1 and 2.580.1 on 2026-10-27.
+0.1.0 is ready to release (see [`CHANGELOG.md`](./CHANGELOG.md)) and has no
+tag yet; [Release](#release) lists the steps. Every test passed on Jenkins 2.541.1 and 2.580.1 on 2026-10-27.
 The project has 100 JenkinsRule
 tests, 29 plain unit tests, 45 browser tests (Chromium) under enforced CSP,
 43 Node tests of the checker, the preview and the types, and 3 browser tests
@@ -570,12 +570,13 @@ a timer, a script) waits in the queue while the controller reads
 ### Check a Jenkinsfile before you push it
 
 ```bash
-pnpm --dir projects/jenkins-ui/js install   # once; the checker needs esbuild
-pnpm --dir projects/jenkins-ui/js check path/to/Jenkinsfile
+pnpm --dir js install   # once; the checker needs esbuild
+pnpm --dir js check path/to/Jenkinsfile
 ```
 
-Paths are relative to the directory you run the command from. A `formFrom`
-path is relative to the repository root: the Git top level of the
+Run it from the root of this repository. Paths are relative to the
+directory you run the command from. A `formFrom` path is relative to the
+repository root of the Jenkinsfile: the Git top level of the
 Jenkinsfile, or its directory outside Git. When that folder exists on disk,
 the checker reads its files and checks them like inline fields; when it
 does not, you get a warning.
@@ -598,9 +599,9 @@ file with no `uiParameter` or `uiPanel` call fails the check.
 ### Preview a form locally
 
 ```bash
-pnpm --dir projects/jenkins-ui/js install   # once
-pnpm --dir projects/jenkins-ui/js preview projects/jenkins-ui/examples/reference.Jenkinsfile \
-  --data projects/jenkins-ui/examples/preview-data.json
+pnpm --dir js install   # once
+pnpm --dir js preview examples/reference.Jenkinsfile \
+  --data examples/preview-data.json
 ```
 
 Open the address it prints, `http://127.0.0.1:4380/` by default. You need no
@@ -621,7 +622,7 @@ The page matches Jenkins where a form can break:
 - A form with `sandbox: true` runs in the sandboxed frame.
 
 To preview a `formFrom` folder without its Jenkinsfile, name the folder:
-`preview projects/jenkins-ui/examples/form-from/forms/deploy`. The parameter
+`preview examples/form-from/forms/deploy`. The parameter
 then takes the folder's name.
 
 | Option | Meaning |
@@ -686,7 +687,7 @@ export default function mount({ root, ui, runtime: { html, render, useState } })
 To check from a terminal or CI:
 
 ```bash
-pnpm --dir projects/jenkins-ui/js typecheck path/to/form.mjs
+pnpm --dir js typecheck path/to/form.mjs
 ```
 
 The command runs TypeScript 6.0.3 with `checkJs`, the browser's DOM types and
@@ -705,17 +706,17 @@ workspace files and artifacts are not served from the Jenkins origin.
 ## How to run
 
 You need Java 17 or newer and Maven 3.9; the JS tooling uses Node 24.22.1 and
-pnpm 12.14.0 (`js/package.json`).
+pnpm 12.14.0 (`js/package.json`). Run the commands from the repository root.
 
 ```bash
-mvn -f projects/jenkins-ui/pom.xml verify          # build and test on 2.541.1
-mvn -f projects/jenkins-ui/pom.xml hpi:run \
+mvn verify                   # build and test on 2.541.1
+mvn hpi:run \
   -Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true   # Jenkins at http://localhost:8080/jenkins/
-pnpm --dir projects/jenkins-ui/js install
-pnpm --dir projects/jenkins-ui/js e2e               # browser tests against hpi:run
-pnpm --dir projects/jenkins-ui/js test              # checker, preview and type tests (Node)
-pnpm --dir projects/jenkins-ui/js preview:e2e       # browser tests of the preview, no Jenkins
-pnpm --dir projects/jenkins-ui/js vendor            # rebuild runtime bundles after editing js/runtimes
+pnpm --dir js install
+pnpm --dir js e2e            # browser tests against hpi:run
+pnpm --dir js test           # checker, preview and type tests (Node)
+pnpm --dir js preview:e2e    # browser tests of the preview, no Jenkins
+pnpm --dir js vendor         # rebuild runtime bundles after editing js/runtimes
 ```
 
 The installable plugin is `target/build-ui.hpi`. Upload it under *Manage
@@ -726,21 +727,21 @@ Jenkins* » *Plugins* » *Advanced settings*.
 Push a tag `jenkins-ui-v<major>.<minor>.<patch>` on a commit of `main`. The
 `jenkins-ui release` workflow builds the plugin at that version, runs its
 tests, and attaches `build-ui.hpi` and its SHA-256 to a GitHub Release with
-`CHANGELOG.md` as the notes. Update `CHANGELOG.md` first.
+`CHANGELOG.md` as the notes. Update `CHANGELOG.md` first. The tag prefix
+lives in `.github/workflows/jenkins-ui-release.yml`.
 
-Releases start after graduation (owner, 2026-10-27). In this monorepo the
-workflows are written for the standalone repository and nobody runs them by
-hand. After the split:
+No release has been cut yet (2026-10-27), and the three workflows have never
+run on GitHub. Before the first tag:
 
-1. Push the standalone repository and check that Actions is enabled and the
-   default token is read-only.
-2. Edit the three `jenkins-ui-*.yml` workflows for the new layout: drop the
-   `projects/jenkins-ui` paths, the working directories and the gitleaks
-   path list.
+1. Check that Actions is enabled and the repository's default workflow token
+   is read-only.
+2. Read the three `.github/workflows/jenkins-ui-*.yml` files: their paths,
+   working directories and the gitleaks path list must point at this
+   repository's layout.
 3. Let `jenkins-ui CI` and `jenkins-ui security` pass on `main`, Firefox and
-   WebKit included. They have never run.
-4. Push the `v0.1.0` tag (the tag prefix changes with the layout) and check
-   that the Release carries `build-ui.hpi` and its checksum.
+   WebKit included.
+4. Push the 0.1.0 tag and check that the Release carries `build-ui.hpi` and
+   its checksum.
 
 `jenkins-ui security` lints the workflows with zizmor and scans the
 project's history for secrets with gitleaks. Both pass locally: zizmor 1.31.1
@@ -750,4 +751,6 @@ found nothing in the three workflows, and gitleaks v8.30.1 found no leaks in
 ## Notes / learnings
 
 - [`MEMORY.md`](./MEMORY.md) holds the current state and the decisions log.
+- [`CONTRIBUTING.md`](./CONTRIBUTING.md) holds the commit, merge and test rules;
+  [`CLAUDE.md`](./CLAUDE.md) points coding agents at it.
 - [`js/lab/`](./js/lab) holds the renderer lab behind the design's measurements.

@@ -2,7 +2,7 @@
 // build-ui preview: renders a Jenkinsfile's uiParameter forms, or one formFrom
 // folder, the way Jenkins does, without a Jenkins.
 //
-//   pnpm --dir projects/jenkins-ui/js preview <Jenkinsfile | formFrom folder>
+//   pnpm --dir js preview <Jenkinsfile | formFrom folder>
 //     [--param NAME] [--data fixtures.json] [--port N] [--root DIR] [--runtime ID]
 //
 // The page carries the markup of UiParameterDefinition/index.jelly, loads the

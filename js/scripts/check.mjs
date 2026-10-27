@@ -2,8 +2,8 @@
 // build-ui checker: finds uiParameter(...) and uiPanel ... calls in Jenkinsfiles
 // and reports mistakes before Jenkins runs them, with Jenkinsfile line numbers.
 //
-//   pnpm --dir projects/jenkins-ui/js check path/to/Jenkinsfile [more files]
-//   node projects/jenkins-ui/js/scripts/check.mjs path/to/Jenkinsfile [more files]
+//   pnpm --dir js check path/to/Jenkinsfile [more files]
+//   node js/scripts/check.mjs path/to/Jenkinsfile [more files]
 //
 // It reads Groovy string literals only. A field built from variables or a
 // "${...}" GString cannot be checked and gets a warning instead.

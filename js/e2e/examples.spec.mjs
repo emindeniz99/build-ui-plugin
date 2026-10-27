@@ -1,5 +1,5 @@
-// The two motivating forms from the RFC, in their generic versions under
-// examples/, driven in a real browser against a real Jenkins.
+// The two motivating forms from the RFC (docs/design.md), in their generic
+// versions under examples/, driven in a real browser against a real Jenkins.
 import { test, expect } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
