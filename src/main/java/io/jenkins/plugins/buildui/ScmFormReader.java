@@ -3,6 +3,7 @@ package io.jenkins.plugins.buildui;
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import hudson.Extension;
 import hudson.model.Job;
+import hudson.model.TaskListener;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -17,9 +18,11 @@ import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 /**
  * Reads a formFrom folder through the SCM API's {@link SCMFileSystem}: on the
  * controller, with the job's own SCM and credentials, without a workspace. A
- * branch job of a multibranch Pipeline reads its branch's head; a Pipeline job
- * defined by "Pipeline script from SCM" reads the branch its SCM names. Loads
- * only with Pipeline and the SCM API.
+ * branch job of a multibranch Pipeline reads the revision its Jenkinsfile comes
+ * from: its head, or for a change request the source does not trust, the
+ * revision the source trusts instead. A Pipeline job defined by "Pipeline
+ * script from SCM" reads the branch its SCM names. Loads only with Pipeline
+ * and the SCM API.
  */
 @Extension(optional = true)
 public class ScmFormReader implements FormFrom.Reader {
@@ -47,7 +50,15 @@ public class ScmFormReader implements FormFrom.Reader {
         SCMHead head = SCMHead.HeadByItem.findHead(job);
         SCMFileSystem fs;
         if (source != null && head != null) {
-            fs = SCMFileSystem.of(source, head);
+            // A change request from an author the source does not trust (a fork's pull request, say)
+            // runs the Jenkinsfile of the revision the source trusts instead of its own: workflow-multibranch's
+            // SCMBinder and readTrusted fetch the tip, ask getTrustedRevision and open that revision.
+            // The form's code and defaults are part of that definition, so they come from the same place.
+            SCMRevision tip = source.fetch(head, TaskListener.NULL);
+            if (tip == null) {
+                throw new IllegalArgumentException("formFrom: the repository of " + job.getFullName() + " has no revision for " + head.getName());
+            }
+            fs = SCMFileSystem.of(source, head, source.getTrustedRevision(tip, TaskListener.NULL));
         } else if (job instanceof WorkflowJob pipeline && pipeline.getDefinition() instanceof CpsScmFlowDefinition definition) {
             fs = SCMFileSystem.of(job, definition.getScm());
         } else {

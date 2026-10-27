@@ -30,10 +30,10 @@ frontend build step.
 
 0.1.0 is ready to release (see [`CHANGELOG.md`](./CHANGELOG.md)) and has no
 tag yet; [Release](#release) lists the steps. Every test passed on Jenkins 2.541.1 and 2.580.1 on 2026-10-27.
-The project has 100 JenkinsRule
+The project has 101 JenkinsRule
 tests, 29 plain unit tests, 45 browser tests (Chromium) under enforced CSP,
 43 Node tests of the checker, the preview and the types, and 3 browser tests
-of the preview (counted 2026-10-27). Maven reports 138 Java tests: our 129
+of the preview (counted 2026-10-27). Maven reports 139 Java tests: our 130
 plus 9 that the plugin parent generates, one of them skipped. CI also
 runs the browser tests in Firefox and WebKit on 2.580.1. The reference
 form is [`examples/reference.Jenkinsfile`](./examples/reference.Jenkinsfile)
@@ -144,6 +144,11 @@ or an agent. The job decides the repository, branch and path; nothing the
 browser sends picks them. [`examples/form-from/`](./examples/form-from)
 shows a whole folder.
 
+- A pull request from an author the multibranch source does not trust, such
+  as a fork's pull request, reads the folder from the revision the source
+  trusts, usually the target branch. Its build runs that revision's
+  Jenkinsfile too, so the pull request's own changes to the folder show up
+  once its author is trusted or it is merged.
 - Supported jobs: branch jobs of a multibranch Pipeline, and Pipeline jobs
   defined by *Pipeline script from SCM*. The SCM must support lightweight
   reads (the Git plugin does).

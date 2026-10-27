@@ -98,6 +98,8 @@ public final class FormFrom {
      * be read; nothing falls back to older content.
      */
     static FormCode read(Job<?, ?> job, String path) {
+        // One job is one head, and the reader decides per head which revision it trusts, so an
+        // untrusted change request's entry (read at the trusted revision) never serves another job.
         String key = job.getFullName() + "\n" + path;
         synchronized (CACHE) {
             Cached cached = CACHE.get(key);

@@ -17,7 +17,10 @@ import hudson.model.StringParameterValue;
 import hudson.model.queue.QueueTaskFuture;
 import hudson.plugins.git.BranchSpec;
 import hudson.plugins.git.GitSCM;
+import hudson.scm.SCM;
+import hudson.scm.SCMDescriptor;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.StringReader;
 import java.net.InetAddress;
 import java.net.ServerSocket;
@@ -36,12 +39,30 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import javax.xml.transform.Source;
 import javax.xml.transform.stream.StreamSource;
 import jenkins.branch.BranchSource;
 import jenkins.model.Jenkins;
 import jenkins.plugins.git.GitSCMSource;
 import jenkins.plugins.git.traits.BranchDiscoveryTrait;
+import jenkins.scm.api.SCMFile;
+import jenkins.scm.api.SCMFileSystem;
+import jenkins.scm.api.SCMHead;
+import jenkins.scm.api.SCMRevision;
+import jenkins.scm.api.SCMSource;
+import jenkins.scm.api.SCMSourceDescriptor;
+import jenkins.scm.api.mixin.ChangeRequestCheckoutStrategy;
+import jenkins.scm.impl.mock.MockChangeRequestFlags;
+import jenkins.scm.impl.mock.MockChangeRequestSCMHead;
+import jenkins.scm.impl.mock.MockChangeRequestSCMRevision;
+import jenkins.scm.impl.mock.MockRepositoryFlags;
+import jenkins.scm.impl.mock.MockSCMController;
+import jenkins.scm.impl.mock.MockSCMDiscoverBranches;
+import jenkins.scm.impl.mock.MockSCMDiscoverChangeRequests;
+import jenkins.scm.impl.mock.MockSCMRevision;
+import jenkins.scm.impl.mock.MockSCMSource;
+import org.apache.commons.io.FileUtils;
 import org.htmlunit.HttpMethod;
 import org.htmlunit.Page;
 import org.htmlunit.WebRequest;
@@ -57,6 +78,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.MockAuthorizationStrategy;
+import org.jvnet.hudson.test.TestExtension;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 /**
@@ -208,6 +230,164 @@ class FormFromTest {
         FormFrom.clearCache();
         assertTrue(formPage("job/mb/job/main/").contains("data-module=\"" + key(module("main-v2"), "mjs") + "\""));
         assertEquals(1, main.getLastBuild().getNumber(), "no build may have run");
+    }
+
+    @Test
+    void aChangeRequestFromAnUntrustedAuthorGetsTheFormOfTheTrustedRevisionLikeItsJenkinsfile() throws Exception {
+        // A fork's change request must not put its own JavaScript in front of every viewer, nor pick
+        // the defaults of the build its webhook starts. Pipeline loads that change request's
+        // Jenkinsfile from the revision the source trusts, so the form must come from there too.
+        try (MockSCMController c = MockSCMController.create()) {
+            c.createRepository("repo", MockRepositoryFlags.TRUST_AWARE);
+            c.addFile("repo", "master", "jenkinsfile", "Jenkinsfile", JENKINSFILE.getBytes(StandardCharsets.UTF_8));
+            mockForm(c, "master", "trusted");
+            Integer fork = c.openChangeRequest("repo", "master", MockChangeRequestFlags.UNTRUSTED);
+            mockForm(c, "change-request/" + fork, "fork");
+            Integer member = c.openChangeRequest("repo", "master");
+            mockForm(c, "change-request/" + member, "member");
+
+            WorkflowMultiBranchProject mp = j.createProject(WorkflowMultiBranchProject.class, "mb");
+            mp.getSourcesList().add(new BranchSource(new MockSCMSource(c, "repo", new MockSCMDiscoverBranches(),
+                    new MockSCMDiscoverChangeRequests(ChangeRequestCheckoutStrategy.HEAD))));
+            mp.scheduleBuild2(0).getFuture().get(60, TimeUnit.SECONDS);
+            j.waitUntilNoActivity();
+            WorkflowJob master = mp.getItem("master");
+            WorkflowJob untrusted = changeRequest(mp, fork);
+            WorkflowJob trusted = changeRequest(mp, member);
+
+            // No cache reset between the three: each job has its own entry and its own trust decision.
+            assertTrue(formPage(untrusted.getUrl()).contains("data-module=\"" + key(module("trusted"), "mjs") + "\""),
+                    "an untrusted change request must show the trusted revision's form.mjs");
+            String trustedPage = formPage(trusted.getUrl());
+            assertTrue(trustedPage.contains("data-module=\"" + key(module("member"), "mjs") + "\""),
+                    "a trusted change request reads its own tip: " + trustedPage);
+            assertTrue(formPage(master.getUrl()).contains("data-module=\"" + key(module("trusted"), "mjs") + "\""));
+            assertNull(ContentStore.get(key(module("fork"), "mjs")), "the fork's module must never become servable");
+
+            // The build the indexing started took default.json from the trusted revision as well.
+            j.assertLogContains("CFG={\"who\":\"trusted\"}", untrusted.getLastBuild());
+            j.assertLogContains("CFG={\"who\":\"member\"}", trusted.getLastBuild());
+        }
+    }
+
+    private static void mockForm(MockSCMController c, String branch, String who) throws IOException {
+        c.addFile("repo", branch, who + " form", "forms/cfg/form.mjs", module(who).getBytes(StandardCharsets.UTF_8));
+        c.addFile("repo", branch, who + " default", "forms/cfg/default.json", ("{\"who\":\"" + who + "\"}").getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static WorkflowJob changeRequest(WorkflowMultiBranchProject mp, Integer number) {
+        for (WorkflowJob job : mp.getItems()) {
+            if (SCMHead.HeadByItem.findHead(job) instanceof MockChangeRequestSCMHead head && head.getNumber().equals(number)) {
+                return job;
+            }
+        }
+        throw new AssertionError("no job for change request " + number + " among " + mp.getItems());
+    }
+
+    /**
+     * scm-api's mock source has no file system of its own. This one checks the
+     * requested revision out into a temporary folder, the way a lightweight
+     * read of a real SCM reads exactly the revision it is given.
+     */
+    @TestExtension("aChangeRequestFromAnUntrustedAuthorGetsTheFormOfTheTrustedRevisionLikeItsJenkinsfile")
+    public static final class MockFileSystems extends SCMFileSystem.Builder {
+        @Override
+        public boolean supports(SCM source) {
+            return false;
+        }
+
+        @Override
+        public boolean supports(SCMSource source) {
+            return source instanceof MockSCMSource;
+        }
+
+        @Override
+        protected boolean supportsDescriptor(SCMDescriptor descriptor) {
+            return false;
+        }
+
+        @Override
+        protected boolean supportsDescriptor(SCMSourceDescriptor descriptor) {
+            return descriptor instanceof MockSCMSource.DescriptorImpl;
+        }
+
+        @Override
+        public SCMFileSystem build(Item owner, SCM scm, SCMRevision rev) {
+            return null;
+        }
+
+        @Override
+        public SCMFileSystem build(SCMSource source, SCMHead head, SCMRevision rev) throws IOException {
+            MockSCMSource mock = (MockSCMSource) source;
+            String identifier;
+            if (rev instanceof MockSCMRevision r) {
+                identifier = r.getHash();
+            } else if (rev instanceof MockChangeRequestSCMRevision r) {
+                identifier = r.getHash();
+            } else if (head instanceof MockChangeRequestSCMHead cr) {
+                identifier = "change-request/" + cr.getNumber();
+            } else {
+                identifier = head.getName();
+            }
+            Path dir = Files.createTempDirectory("mock-scm");
+            MockSCMController.lookup(mock.getControllerId()).checkout(dir.toFile(), mock.getRepository(), identifier);
+            return new SCMFileSystem(rev) {
+                @Override
+                public long lastModified() {
+                    return 0;
+                }
+
+                @Override
+                public SCMFile getRoot() {
+                    return new PathFile(dir);
+                }
+
+                @Override
+                public void close() throws IOException {
+                    FileUtils.deleteDirectory(dir.toFile());
+                }
+            };
+        }
+    }
+
+    private static final class PathFile extends SCMFile {
+        private final Path path;
+
+        PathFile(Path root) {
+            this.path = root;
+        }
+
+        private PathFile(PathFile parent, String name) {
+            super(parent, name);
+            this.path = parent.path.resolve(name);
+        }
+
+        @Override
+        protected SCMFile newChild(String name, boolean assumeIsDirectory) {
+            return new PathFile(this, name);
+        }
+
+        @Override
+        public Iterable<SCMFile> children() throws IOException {
+            try (Stream<Path> files = Files.list(path)) {
+                return files.map(p -> (SCMFile) new PathFile(this, p.getFileName().toString())).toList();
+            }
+        }
+
+        @Override
+        public long lastModified() {
+            return 0;
+        }
+
+        @Override
+        protected Type type() {
+            return Files.isDirectory(path) ? Type.DIRECTORY : Files.isRegularFile(path) ? Type.REGULAR_FILE : Type.NONEXISTENT;
+        }
+
+        @Override
+        public InputStream content() throws IOException {
+            return Files.newInputStream(path);
+        }
     }
 
     // ---- (c) schema.json and default.json -----------------------------------

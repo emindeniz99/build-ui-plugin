@@ -588,7 +588,7 @@ From the browser suite against Jenkins:
 
 ## 14. Forms from the repository and single-file forms (Tested)
 
-`FormFromTest` (JenkinsRule, 14 tests), `SingleFileHtmlTest` (11 plain unit
+`FormFromTest` (JenkinsRule, 15 tests), `SingleFileHtmlTest` (11 plain unit
 tests), six checker tests and `js/e2e/form-from.spec.mjs` (Chromium) cover
 this section, all on Jenkins 2.541.1 with local Git repositories.
 
@@ -609,14 +609,23 @@ branch head when *Build with Parameters* opens.
    `config.xml` bypasses the setters, so `readResolve` keeps a bad value as
    an error that the page and every value check report.
 2. `ScmFormReader`, an optional extension that loads with Pipeline and the
-   SCM API, opens an `SCMFileSystem` on the controller:
-   `SCMFileSystem.of(source, head)` for a multibranch branch job, found
-   through `SCMSource.SourceByItem` and `SCMHead.HeadByItem` (no compile
-   dependency on branch-api), and `SCMFileSystem.of(job, scm)` for a job
-   whose definition is `CpsScmFlowDefinition`. Any other job, and the
-   `input` step, gets an error naming what is supported. The job's own
-   credentials stay on the controller; the browser sends nothing that picks
-   the repository, branch or path.
+   SCM API, opens an `SCMFileSystem` on the controller. For a multibranch
+   branch job, found through `SCMSource.SourceByItem` and
+   `SCMHead.HeadByItem` (no compile dependency on branch-api), it reads the
+   revision Pipeline reads the Jenkinsfile from: `source.fetch(head)` for
+   the tip, `source.getTrustedRevision(tip)`, then
+   `SCMFileSystem.of(source, head, revision)` (Fact: workflow-multibranch
+   841's `SCMBinder` and `readTrusted` make the same three calls, read in
+   the bytecode). A change request from an author the source does not
+   trust, such as a fork's pull request, therefore gets all five files from
+   the trusted revision, usually the target branch, just as its build runs
+   the target branch's Jenkinsfile. Its own `form.mjs` never reaches a
+   viewer and its `default.json` never sets the parameter of the build its
+   webhook starts. A job whose definition is `CpsScmFlowDefinition` reads
+   through `SCMFileSystem.of(job, scm)`. Any other job, and the `input`
+   step, gets an error naming what is supported. The job's own credentials
+   stay on the controller; the browser sends nothing that picks the
+   repository, branch or path.
 3. `FormFrom` caches one result per job and folder for 10 seconds, at most
    256 entries, failures included, so a broken folder does not cost a fetch
    per page view. Concurrent requests share one read in progress. A read
@@ -627,7 +636,11 @@ branch head when *Build with Parameters* opens.
    limits of section 5). An `ItemListener` drops a job's entries when it is
    renamed, moved or deleted: without it, a job that took a renamed job's
    name within 10 seconds showed the other job's form (found by
-   `IntegrationTest`, 2026-10-27).
+   `IntegrationTest`, 2026-10-27). A branch job is one head, and the
+   reader decides per read which revision that head may use, so an entry
+   read at the trusted revision for an untrusted change request never
+   serves another job, and a trusted head's entry never serves an
+   untrusted one.
 4. The brief asked for a cache per job and resolved head revision. The key
    is the job and folder instead, and the entry records the revision for the
    log: `SCMFileSystem` reports a revision only after `of()` has resolved the
@@ -710,7 +723,14 @@ JenkinsRule on Jenkins 2.541.1, Git plugin 5.10.1, scm-api 728, git 2.43.0,
   as its default. Such a copy is not meant to be saved; `readResolve` would
   report it as a conflict.
 - Only Git was tried, only `file:` repositories without credentials, only
-  Chromium.
+  Chromium. Trust was tested with scm-api's `MockSCMSource` (a trust-aware
+  repository, one untrusted and one trusted change request) and a file
+  system written for that test, not with GitHub, GitLab or Bitbucket. In
+  that test the untrusted change request's page showed the target branch's
+  module, its first build took the target branch's `default.json`, and the
+  trusted change request read its own tip.
+- A change to whom the source trusts shows up when the 10-second entry
+  expires, as a push does.
 
 ## 15. Local preview and module types (Tested)
 

@@ -29,7 +29,9 @@ history.
   Jenkins reads the folder from the branch head of a multibranch branch job
   or a *Pipeline script from SCM* job, through the SCM API on the
   controller, so a push shows up on the next page load after a 10-second
-  cache, without a build. Values are validated against the committed
+  cache, without a build. A pull request from an author the source does
+  not trust reads the folder from the trusted revision, as Pipeline does for
+  its Jenkinsfile. Values are validated against the committed
   `schema.json`. Other job types and the `input` step show the reason and the
   JSON field.
 
