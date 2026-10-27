@@ -145,32 +145,44 @@ public final class FormFrom {
     /** Runs on a pool thread, never on a thread that holds the queue lock. */
     private static Cached load(String key, Job<?, ?> job, String path) {
         Cached entry;
+        Files files = null;
         try (ACLContext ignored = ACL.as2(ACL.SYSTEM2)) {
             ExtensionList<Reader> readers = ExtensionList.lookup(Reader.class);
             if (readers.isEmpty()) {
                 entry = error(job, path, "formFrom needs the Pipeline and SCM API plugins");
             } else {
-                Files files = readers.get(0).read(job, path);
-                LOGGER.fine(() -> "Read formFrom '" + path + "' of " + job.getFullName() + " at " + files.revision());
+                files = readers.get(0).read(job, path);
+                Files read = files;
+                LOGGER.fine(() -> "Read formFrom '" + path + "' of " + job.getFullName() + " at " + read.revision());
                 entry = new Cached(System.currentTimeMillis(), FormCode.of(files.module(), files.html(), files.css(),
                         files.schema(), files.defaultJson(), true), null);
             }
         } catch (IllegalArgumentException e) {
             String message = String.valueOf(e.getMessage());
-            entry = error(job, path, message.startsWith("formFrom") ? message : "formFrom '" + path + "': " + message);
+            if (files == null && !message.startsWith("formFrom")) {
+                // Not the reader's own reason but one from SCM code, which may quote a remote URL with its token.
+                entry = hidden(job, path, e);
+            } else {
+                // The reader's reason, or what is wrong with the files' content.
+                entry = error(job, path, message.startsWith("formFrom") ? message : "formFrom '" + path + "': " + message);
+            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             entry = error(job, path, "formFrom: interrupted while reading '" + path + "'");
         } catch (IOException | RuntimeException e) {
-            // The message reaches the browser: keep it to the job and path, never SCM or credential details.
-            LOGGER.log(Level.WARNING, "Could not read formFrom '" + path + "' of " + job.getFullName(), e);
-            entry = error(job, path, "formFrom: could not read '" + path + "' from the repository of " + job.getFullName()
-                    + " (" + e.getClass().getSimpleName() + "); the controller log has the details");
+            entry = hidden(job, path, e);
         }
         synchronized (CACHE) {
             CACHE.put(key, entry);
         }
         return entry;
+    }
+
+    /** The message reaches the browser: keep it to the job and path, never SCM or credential details. */
+    private static Cached hidden(Job<?, ?> job, String path, Exception e) {
+        LOGGER.log(Level.WARNING, "Could not read formFrom '" + path + "' of " + job.getFullName(), e);
+        return error(job, path, "formFrom: could not read '" + path + "' from the repository of " + job.getFullName()
+                + " (" + e.getClass().getSimpleName() + "); the controller log has the details");
     }
 
     private static Cached error(Job<?, ?> job, String path, String message) {

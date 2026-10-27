@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import hudson.ExtensionList;
 import hudson.model.FreeStyleProject;
 import hudson.model.Item;
 import hudson.model.ParametersAction;
@@ -622,6 +623,30 @@ class FormFromTest {
         } catch (IOException e) {
             // already closed
         }
+    }
+
+    @Test
+    void anScmErrorThatQuotesARemoteUrlReachesTheBrowserWithoutIt() throws Exception {
+        // java.net.URI and other code the SCM calls put the whole URL, token included, in an
+        // IllegalArgumentException; the page and the 400 answer go to anyone with Build permission.
+        String url = "https://deploy:s3cr3t-token@git.example.invalid/app.git";
+        ExtensionList<FormFrom.Reader> readers = ExtensionList.lookup(FormFrom.Reader.class);
+        readers.removeAll(new ArrayList<>(readers));
+        readers.add((job, path) -> {
+            throw new IllegalArgumentException("Illegal character in authority at index 8: " + url);
+        });
+        FreeStyleProject p = j.createFreeStyleProject("p");
+        UiParameterDefinition d = new UiParameterDefinition("CFG");
+        d.setFormFrom("forms/cfg");
+        p.addProperty(new ParametersDefinitionProperty(d));
+
+        String page = formPage("job/p/");
+        assertTrue(page.contains("formFrom: could not read 'forms/cfg' from the repository of p (IllegalArgumentException);"
+                + " the controller log has the details"), page);
+        assertFalse(page.contains("s3cr3t"), page);
+        Page refused = buildWithParameters("job/p/", "{}");
+        assertEquals(400, refused.getWebResponse().getStatusCode());
+        assertFalse(refused.getWebResponse().getContentAsString().contains("s3cr3t"));
     }
 
     @Test

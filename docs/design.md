@@ -588,7 +588,7 @@ From the browser suite against Jenkins:
 
 ## 14. Forms from the repository and single-file forms (Tested)
 
-`FormFromTest` (JenkinsRule, 15 tests), `SingleFileHtmlTest` (15 plain unit
+`FormFromTest` (JenkinsRule, 16 tests), `SingleFileHtmlTest` (15 plain unit
 tests), eleven checker tests and `js/e2e/form-from.spec.mjs` (Chromium) cover
 this section, all on Jenkins 2.541.1 with local Git repositories.
 
@@ -631,7 +631,10 @@ branch head when *Build with Parameters* opens.
    per page view. Concurrent requests share one read in progress. A read
    runs on a pool thread under `ACL.SYSTEM2` and a caller waits at most 20
    seconds; a read that takes longer keeps going and fills the cache for
-   the next request. Files are capped at 512 KiB (`form.mjs`, `form.html`,
+   the next request. The browser sees the reader's own reasons and what is
+   wrong with the files; any other failure, an `IllegalArgumentException`
+   from SCM code included, shows only the job, the path and the exception's
+   class, because such messages can quote a remote URL with its token. Files are capped at 512 KiB (`form.mjs`, `form.html`,
    `form.css`) and 256 KiB (`schema.json`, `default.json`, then the JSON
    limits of section 5). An `ItemListener` drops a job's entries when it is
    renamed, moved or deleted: without it, a job that took a renamed job's
@@ -807,7 +810,7 @@ and `js/test/typecheck.test.mjs` (4 Node tests) cover this section.
 
 ## 16. gitRefs, Git Parameter parity and other plugins (Tested)
 
-`GitRefsProviderTest` (19 tests), `GitParameterParityTest` (5) and
+`GitRefsProviderTest` (21 tests), `GitParameterParityTest` (5) and
 `IntegrationTest` (4), JenkinsRule on Jenkins 2.541.1 with local Git
 repositories, cover this section.
 
@@ -820,7 +823,10 @@ version), read in its source and run in the test.
 ### Decisions
 
 - `repository` is a glob of the remote URL, matched against the URL the job
-  configures. Git Parameter's `useRepository` matches remote URLs too, as a
+  configures without its user and password part: `https://user:token@host/x`
+  is matched, answered and named in errors as `https://host/x`, because
+  anyone with Build permission may query and a glob would otherwise probe
+  the token. scp-like `git@host:x` has no password and stays as it is. Git Parameter's `useRepository` matches remote URLs too, as a
   regex with `find()` (Fact: `SCMFactory` and `GitParameterDefinition` in
   462.463); it has no name or ID match, so neither does `gitRefs`. A glob
   instead of a regex keeps the browser's input out of the regex engine. The

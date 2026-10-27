@@ -42,7 +42,9 @@ import org.jenkinsci.plugins.gitclient.GitClient;
  * globs ({@code *}, {@code ?}) and {@code search} is a plain substring, never
  * regular expressions, so a caller cannot make the controller backtrack. Needs
  * Build permission on the job, because every uncached call contacts the
- * remote. Loads only with the Git plugin.
+ * remote. Loads only with the Git plugin. Remote URLs leave the controller
+ * without their user and password part ({@link #withoutUserInfo}), and
+ * {@code repository} matches them in that form.
  *
  * <p>The answer is {@code { branches, tags, total: { branches, tags } }}.
  * {@code total} counts the entries after filtering and before paging, so a
@@ -169,7 +171,7 @@ public class GitRefsProvider extends DataProvider implements RefLookup {
             Globs.Glob glob = Globs.compile(repository, "repository");
             remotes.removeIf(remote -> {
                 String url = remote.getUrl();
-                return url == null || !glob.matches(url);
+                return url == null || !glob.matches(withoutUserInfo(url));
             });
             if (remotes.isEmpty()) {
                 throw new IllegalArgumentException("no Git repository of " + job.getFullName() + " matches '" + repository + "'");
@@ -177,12 +179,13 @@ public class GitRefsProvider extends DataProvider implements RefLookup {
         }
         List<Ref> out = new ArrayList<>();
         for (UserRemoteConfig remote : remotes) {
+            String shown = withoutUserInfo(remote.getUrl());
             for (Map.Entry<String, String> e : remoteRefs(job, remote).entrySet()) {
                 String refName = e.getKey();
                 if (refName.startsWith("refs/heads/")) {
-                    out.add(new Ref("branch", refName.substring("refs/heads/".length()), e.getValue(), remote.getUrl()));
+                    out.add(new Ref("branch", refName.substring("refs/heads/".length()), e.getValue(), shown));
                 } else if (refName.startsWith("refs/tags/") && !refName.endsWith("^{}")) {
-                    out.add(new Ref("tag", refName.substring("refs/tags/".length()), e.getValue(), remote.getUrl()));
+                    out.add(new Ref("tag", refName.substring("refs/tags/".length()), e.getValue(), shown));
                 }
             }
         }
@@ -213,11 +216,23 @@ public class GitRefsProvider extends DataProvider implements RefLookup {
             return refs;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new IllegalArgumentException("interrupted while listing " + url, e);
+            throw new IllegalArgumentException("interrupted while listing " + withoutUserInfo(url), e);
         } catch (Exception e) {
-            // The message goes to the browser: keep it to the URL, never credential details.
-            throw new IllegalArgumentException("could not list refs of " + url + " (" + e.getClass().getSimpleName() + ")", e);
+            // The message goes to the browser: keep it to the URL without its user and password, never credential details.
+            throw new IllegalArgumentException("could not list refs of " + withoutUserInfo(url) + " (" + e.getClass().getSimpleName() + ")", e);
         }
+    }
+
+    private static final Pattern USER_INFO = Pattern.compile("^([A-Za-z][A-Za-z0-9+.-]*://)[^/?#]*@");
+
+    /**
+     * A remote URL as the browser may see it: {@code https://user:token@host/repo}
+     * becomes {@code https://host/repo}. A user name in such a URL can be the
+     * token itself, so the whole user part goes, up to the last {@code @} before
+     * the path. scp-like {@code git@host:repo} has no password and stays as it is.
+     */
+    static String withoutUserInfo(String url) {
+        return USER_INFO.matcher(url).replaceFirst("$1");
     }
 
     static void remember(String key, Map<String, String> refs) {

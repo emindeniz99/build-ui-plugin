@@ -1,6 +1,7 @@
 package io.jenkins.plugins.buildui;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -389,6 +390,48 @@ class GitRefsProviderTest {
         assertTrue(other.getWebResponse().getContentAsString().contains("no Git repository of app matches 'https://git.example.invalid/x.git'"),
                 other.getWebResponse().getContentAsString());
         assertEquals(400, rawQuery(j, "{\"job\":\"app\",\"repository\":\"" + "*".repeat(101) + "\"}").getWebResponse().getStatusCode());
+    }
+
+    static final String TOKEN_URL = "https://deploy:s3cr3t-token@git.example.invalid/app.git";
+
+    @Test
+    void aTokenInARemoteUrlNeverReachesTheBrowser(JenkinsRule j) throws Exception {
+        // Anyone with Build permission may query; the token in a URL like this belongs to the job alone.
+        FreeStyleProject job = j.createFreeStyleProject("app");
+        job.setScm(new GitSCM(TOKEN_URL));
+        GitRefsProvider.remember("app\n" + TOKEN_URL + "\nnull", java.util.Map.of("refs/heads/main", "0".repeat(40), "refs/tags/v1.0", "1".repeat(40)));
+        JenkinsRule.WebClient wc = j.createWebClient();
+        Page answer = wc.goTo("build-ui/query/gitRefs?args=" + URLEncoder.encode("{\"job\":\"app\"}", StandardCharsets.UTF_8), "application/json");
+        String text = answer.getWebResponse().getContentAsString();
+        assertTrue(text.contains("\"repository\":\"https://git.example.invalid/app.git\""), text);
+        assertFalse(text.contains("s3cr3t") || text.contains("deploy"), text);
+
+        // repository and x-git-repository match the URL as the browser sees it, so a glob cannot probe the token.
+        assertEquals(List.of("main"), names(query(wc, "{\"job\":\"app\",\"repository\":\"https://git.example.invalid/*\"}").get("branches")));
+        assertEquals(400, rawQuery(j, "{\"job\":\"app\",\"repository\":\"*s3cr3t*\"}").getWebResponse().getStatusCode());
+        assertTrue(new GitRefsProvider().hasRef(job, "v1.0", "tag", "https://git.example.invalid/app.git"));
+
+        // A remote that cannot be listed names its URL in the error, without the token.
+        FreeStyleProject down = j.createFreeStyleProject("down");
+        down.setScm(new GitSCM("http://deploy:s3cr3t-token@127.0.0.1:1/app.git"));
+        Page error = rawQuery(j, "{\"job\":\"down\"}");
+        assertEquals(400, error.getWebResponse().getStatusCode());
+        String message = error.getWebResponse().getContentAsString();
+        assertTrue(message.contains("could not list refs of http://127.0.0.1:1/app.git"), message);
+        assertFalse(message.contains("s3cr3t"), message);
+    }
+
+    @Test
+    void userInfoIsTakenOutOfUrlsWithASchemeOnly() {
+        assertEquals("https://git.example.invalid/app.git", GitRefsProvider.withoutUserInfo(TOKEN_URL));
+        assertEquals("https://git.example.invalid/app.git", GitRefsProvider.withoutUserInfo("https://ghp_token@git.example.invalid/app.git"));
+        // An unencoded '@' in the password: the host starts after the last one.
+        assertEquals("https://git.example.invalid:8443/a@b.git", GitRefsProvider.withoutUserInfo("https://u:p@ss@git.example.invalid:8443/a@b.git"));
+        assertEquals("ssh://git.example.invalid/app.git", GitRefsProvider.withoutUserInfo("ssh://git@git.example.invalid/app.git"));
+        // scp-like syntax has a user name and no password, and file paths have neither: both stay as they are.
+        assertEquals("git@git.example.invalid:org/app.git", GitRefsProvider.withoutUserInfo("git@git.example.invalid:org/app.git"));
+        assertEquals("file:///srv/git/app.git", GitRefsProvider.withoutUserInfo("file:///srv/git/app.git"));
+        assertEquals("https://git.example.invalid/app.git?a=b@c", GitRefsProvider.withoutUserInfo("https://git.example.invalid/app.git?a=b@c"));
     }
 
     @Test

@@ -44,7 +44,8 @@ history.
   case-insensitive `search`, newest-version-first sorting, and `offset` and
   `limit` with a `total` count for paging. The `x-git-ref` schema keyword
   makes the controller reject refs that do not exist, and `x-git-repository`
-  limits that check to matching remotes. Needs the Git plugin and Build
+  limits that check to matching remotes. Remote URLs reach the browser
+  without a user or token. Needs the Git plugin and Build
   permission. A test compares its lists with Git Parameter's for
   equivalent settings; the README lists where they differ.
 - Works next to Git Parameter and Active Choices on one form, and after a

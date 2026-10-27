@@ -30,10 +30,10 @@ frontend build step.
 
 0.1.0 is ready to release (see [`CHANGELOG.md`](./CHANGELOG.md)) and has no
 tag yet; [Release](#release) lists the steps. Every test passed on Jenkins 2.541.1 and 2.580.1 on 2026-10-27.
-The project has 101 JenkinsRule
+The project has 104 JenkinsRule
 tests, 33 plain unit tests, 45 browser tests (Chromium) under enforced CSP,
 48 Node tests of the checker, the preview and the types, and 3 browser tests
-of the preview (counted 2026-10-27). Maven reports 143 Java tests: our 134
+of the preview (counted 2026-10-27). Maven reports 146 Java tests: our 137
 plus 9 that the plugin parent generates, one of them skipped. CI also
 runs the browser tests in Firefox and WebKit on 2.580.1. The reference
 form is [`examples/reference.Jenkinsfile`](./examples/reference.Jenkinsfile)
@@ -355,14 +355,16 @@ does not parse descriptions itself.
 `limit`, so a form can tell whether another page exists. The browser never
 sends a URL for Jenkins to contact: `repository` only picks among the job's
 own remotes, so Jenkins only contacts servers a job is configured for, and
-the job's credentials stay on the controller. It needs Build permission on
+the job's credentials stay on the controller. A remote URL that carries a
+user or token (`https://user:token@host/repo.git`) reaches the browser as
+`https://host/repo.git`, in answers and in errors. It needs Build permission on
 the job, works once the job has checked out at least once, caches each
 repository's refs for 30 seconds, and needs the Git plugin.
 
 | Argument | Default | Meaning |
 |---|---|---|
 | `job` | required | Full name of the job, usually `ui.job` |
-| `repository` | all | A glob of the remote URL, as the job configures it, for example `*/tools.git`. Only remotes that match are listed; a glob that matches none gets 400 |
+| `repository` | all | A glob of the remote URL, as the job configures it but without a user or token, for example `*/tools.git`. Only remotes that match are listed; a glob that matches none gets 400 |
 | `branches`, `tags` | `*` | Glob filters (`*` any run, `?` one character), matched against the whole name, for example `release/*` or `v1.*` |
 | `search` | none | Keeps names that contain this text, ignoring case. Plain text, applied after the globs; at most 100 characters |
 | `sort` | `name` | `name`, or `version-desc` for newest version first: `v1.10.0` before `v1.9.0`, and `1.0.0` before `1.0.0-rc1` |
