@@ -1,0 +1,29 @@
+{
+  "jenkinsRuns": {
+    "$cases": [
+      {
+        "args": { "parameter": "DEPLOY" },
+        "answer": [
+          { "number": 42, "displayName": "#42", "description": null, "result": "SUCCESS", "building": false, "timestamp": 1792000000000, "duration": 61000, "url": "job/preview/42/", "config": { "branch": "main", "envs": ["env-1", "env-3"], "services": ["api"], "autoDeploy": true } },
+          { "number": 41, "displayName": "#41", "description": null, "result": "FAILURE", "building": false, "timestamp": 1791990000000, "duration": 12000, "url": "job/preview/41/", "config": { "branch": "feature/login", "envs": ["env-2"], "services": ["web"], "autoDeploy": false } }
+        ]
+      },
+      {
+        "answer": [
+          { "number": 7, "displayName": "#7", "description": null, "result": null, "building": true, "timestamp": 1792000000000, "duration": 0, "url": "job/preview/7/" },
+          { "number": 6, "displayName": "#6", "description": null, "result": "SUCCESS", "building": false, "timestamp": 1791990000000, "duration": 45000, "url": "job/preview/6/" }
+        ]
+      }
+    ]
+  },
+  "gitRefs": {
+    "branches": [
+      { "name": "main", "sha": "3f2a9c1d0e4b5a6978c1d2e3f4a5b6c7d8e9f0a1", "repository": "https://git.example.com/app.git" },
+      { "name": "release/1.4", "sha": "9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c", "repository": "https://git.example.com/app.git" }
+    ],
+    "tags": [
+      { "name": "v1.4.0", "sha": "9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c", "repository": "https://git.example.com/app.git" },
+      { "name": "v1.3.2", "sha": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b", "repository": "https://git.example.com/app.git" }
+    ]
+  }
+}

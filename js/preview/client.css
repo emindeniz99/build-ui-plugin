@@ -1,0 +1,22 @@
+/* The preview page around the forms. Jenkins's own stylesheets are not loaded,
+   so forms see the fallbacks of the Jenkins variables they use. */
+:root { color-scheme: light dark; font: 15px/1.45 system-ui, sans-serif; }
+body { margin: 0 auto; padding: 0 16px 32px; max-width: 1200px; }
+h1 { font-size: 1.3rem; margin: 16px 0 8px; }
+h2 { font-size: 0.95rem; margin: 0 0 6px; }
+section { margin: 0 0 16px; }
+.preview-findings ul, .preview-csp ul, .preview-errors { margin: 0; padding-left: 1.2rem; }
+.preview-csp { color: #b00020; }
+.preview-row { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; border-top: 1px solid #8884; padding: 16px 0; }
+@media (max-width: 720px) { .preview-row { grid-template-columns: minmax(0, 1fr); } }
+.jenkins-form-label { font-weight: 600; margin-bottom: 6px; }
+.jenkins-form-description { opacity: 0.8; margin-top: 6px; }
+.build-ui-value { width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; }
+.build-ui-form-error { color: #b00020; }
+.preview-json { margin: 0 0 8px; padding: 8px; background: #8881; border-radius: 4px; overflow: auto; max-height: 24rem; }
+.preview-value[data-valid="true"] .preview-verdict { color: #1b6e2a; }
+.preview-value[data-valid="false"] .preview-verdict, .preview-value[data-valid="false"] .preview-errors { color: #b00020; }
+@media (prefers-color-scheme: dark) {
+  .preview-csp, .build-ui-form-error, .preview-value[data-valid="false"] .preview-verdict, .preview-value[data-valid="false"] .preview-errors { color: #ff8a80; }
+  .preview-value[data-valid="true"] .preview-verdict { color: #81c995; }
+}
