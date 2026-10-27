@@ -1,0 +1,17 @@
+// The form lives in forms/deploy/ of this repository. Jenkins reads it from the
+// branch head each time Build with Parameters opens, so a pushed change to the
+// form shows up without a build. Use it in a multibranch Pipeline or in a
+// Pipeline job whose definition is "Pipeline script from SCM".
+pipeline {
+  agent none
+  parameters {
+    uiParameter(name: 'DEPLOY', formFrom: 'forms/deploy')
+  }
+  stages {
+    stage('Deploy') {
+      steps {
+        echo "DEPLOY=${params.DEPLOY}"
+      }
+    }
+  }
+}

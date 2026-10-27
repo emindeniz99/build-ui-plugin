@@ -19,7 +19,9 @@ import java.util.logging.Logger;
  * paths already reject invalid values with a message before they get here.
  * Jenkins calls this with the lock for the whole queue held, so it checks
  * only the schema, whose pattern time is bounded per document; Git refs need
- * the network and are checked by {@link RefGuard} outside the lock.
+ * the network and are checked by {@link RefGuard} outside the lock. So is the
+ * schema of a formFrom parameter, which lives in the repository: here such a
+ * value is only checked to be JSON.
  */
 @Extension
 public class QueueGuard extends Queue.QueueDecisionHandler {

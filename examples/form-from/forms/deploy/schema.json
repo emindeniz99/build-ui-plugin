@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "required": ["env", "dryRun"],
+  "additionalProperties": false,
+  "properties": {
+    "env": { "enum": ["dev", "staging", "prod"] },
+    "dryRun": { "type": "boolean" }
+  }
+}

@@ -3,10 +3,12 @@
 // or late (a schema keyword the controller rejects only when the job runs).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkSource } from '../scripts/check.mjs';
+import { checkSource, splitHtml } from '../scripts/check.mjs';
 
 const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
 const errors = (problems) => problems.filter((p) => p.level === 'error');
@@ -22,6 +24,9 @@ test('every example Jenkinsfile and the README example are clean', async () => {
   for (const f of ['reference', 'parallel-envs', 'release']) {
     assert.deepEqual(await checkSource(read(`../../examples/${f}.Jenkinsfile`)), [], f);
   }
+  // The formFrom example is a repository of its own: its folder paths start at examples/form-from.
+  const formFromRoot = fileURLToPath(new URL('../../examples/form-from', import.meta.url));
+  assert.deepEqual(await checkSource(read('../../examples/form-from/Jenkinsfile'), { root: formFromRoot }), []);
   const readme = read('../../README.md');
   for (const [, block] of readme.matchAll(/```groovy\n([\s\S]*?)```/g)) {
     assert.deepEqual(errors(await checkSource(block)), [], block.slice(0, 80));
@@ -244,4 +249,101 @@ test('sandbox takes a boolean, and is reported where it would sandbox nothing', 
     ['warning', "uiParameter 'C': sandbox: true has no effect: this form runs no code of its own (no module, html or css)"],
     ['warning', "uiParameter 'D': sandbox is not a plain true or false, so it was not checked"],
   ]);
+});
+
+// ---- single-file html and formFrom ---------------------------------------
+// The controller splits a uiParameter's html into module, css and markup, and
+// reads formFrom folders from the branch head; the checker applies the same
+// rules before the push, so the mistake shows up here rather than on the page.
+
+test('a single-file html needs no module field, and its module script is checked like one', async () => {
+  assert.deepEqual(await checkSource(`uiParameter(name: 'C', html: '''<style>p { color: red }</style>
+<p>hi</p>
+<script type="module">
+export default function mount({ root }) { root.textContent = 'hi' }
+</script>''')`), []);
+  const p = errors(await checkSource([
+    "uiParameter(name: 'C', html: '''<p>hi</p>",
+    '<script type="module">',
+    'export default function mount({ root }) {',
+    '  if (',
+    "}</script>''')",
+  ].join('\n')));
+  assert.equal(p.length, 1);
+  assert.equal(p[0].line, 5, 'the error points at the Jenkinsfile line inside the script');
+  assert.match(p[0].message, /^uiParameter 'C': module: /);
+});
+
+test('single-file html refuses what would not run: classic and src scripts, two modules, handlers, module twice', async () => {
+  const messages = async (src) => errors(await checkSource(src)).map((x) => x.message.replace(/^uiParameter '\w': /, '').split(';')[0]);
+  assert.deepEqual(await messages(`uiParameter(name: 'A', html: '<script>go()</script>')`),
+    ["module is required unless runtime is 'schema-form'", 'html has a <script> without type="module"']);
+  assert.deepEqual(await messages(`uiParameter(name: 'B', module: 'export default () => {}', html: '<script type="module" src="/x.mjs"></script>')`),
+    ['html has a <script src=...>']);
+  assert.deepEqual(await messages(`uiParameter(name: 'C', html: '<script type=module>export default () => {}</script><script type=module>x()</script>')`),
+    ['html has more than one <script type="module">']);
+  assert.deepEqual(await messages(`uiParameter(name: 'D', html: '<button onclick="go()">Go</button><script type=module>export default () => {}</script>')`),
+    ['html uses the inline handler onclick=']);
+  assert.deepEqual(await messages(`uiParameter(name: 'E', module: 'export default () => {}', html: '<script type="module">export default () => {}</script>')`),
+    ['html has a <script type="module"> and the form has module too']);
+});
+
+test('splitHtml matches the controller: styles join in order, comments keep their scripts', () => {
+  const parts = splitHtml('<!-- <script>old()</script> --><STYLE>a{}</STYLE><p>x</p><style>b{}</style><SCRIPT type="Module">m()</SCRIPT>', 'html');
+  assert.deepEqual({ ...parts, moduleStart: undefined }, {
+    module: 'm()', moduleStart: undefined, html: '<!-- <script>old()</script> --><p>x</p>', css: 'a{}\nb{}', errors: [],
+  });
+});
+
+test('formFrom paths are checked like the controller checks them, and inline fields next to it are errors', async () => {
+  const p = errors(await checkSource(`
+    uiParameter(name: 'A', formFrom: '../secrets')
+    uiParameter(name: 'B', formFrom: '/etc/forms')
+    uiParameter(name: 'C', formFrom: 'forms/c', schema: '{"type":"object"}', module: 'export default () => {}')
+    uiParameter(name: 'D', formFrom: 'forms/d')`));
+  assert.deepEqual(p.map((x) => x.message.split(';')[0]), [
+    "uiParameter 'A': formFrom '../secrets' must not contain '..'",
+    "uiParameter 'B': formFrom '/etc/forms' must be a folder relative to the repository root: letters, digits, '.', '_' and '-' separated by '/', with no leading or trailing '/' and no '\\'",
+    "uiParameter 'C': formFrom reads module, html, css, schema and defaultJson from 'forms/c', so the Jenkinsfile must not set them too",
+  ]);
+  assert.match(p[2].message, /remove module, schema$/);
+});
+
+test('a formFrom folder on disk is checked like inline fields; a missing one is a warning', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'build-ui-check-'));
+  mkdirSync(path.join(root, 'forms/bad'), { recursive: true });
+  writeFileSync(path.join(root, 'forms/bad/form.html'), '<p onclick="x()">hi</p>\n<script type="module">\nexport default function mount() {\n  nope(\n}\n</script>');
+  writeFileSync(path.join(root, 'forms/bad/form.mjs'), 'export default () => {}');
+  writeFileSync(path.join(root, 'forms/bad/schema.json'), '{"type":"object","properties":{"a":{"$ref":"#"}}}');
+  writeFileSync(path.join(root, 'forms/bad/default.json'), '{"a":1,"a":2}');
+  const p = await checkSource(`
+    uiParameter(name: 'C', formFrom: 'forms/bad')
+    uiParameter(name: 'M', formFrom: 'forms/missing')`, { root });
+  assert.deepEqual(p.map((x) => [x.level, x.message.split(';')[0]]), [
+    ['error', "uiParameter 'C': forms/bad/form.html uses the inline handler onclick="],
+    ['error', "uiParameter 'C': forms/bad/form.html has a <script type=\"module\"> and the form has form.mjs too"],
+    ['error', "uiParameter 'C': forms/bad/schema.json: schema at /properties/a: keyword '$ref' is not supported"],
+    ['error', "uiParameter 'C': forms/bad/default.json: default.json has the key \"a\" twice in one object"],
+    ['warning', `uiParameter 'M': formFrom folder 'forms/missing' is not under ${root}, so its files were not checked`],
+  ]);
+
+  // With only form.html, its module script is checked, at its line in that file.
+  rmSync(path.join(root, 'forms/bad/form.mjs'));
+  writeFileSync(path.join(root, 'forms/bad/form.html'), '<p>hi</p>\n<script type="module">\nexport default function mount() {\n  nope(\n}\n</script>');
+  const q = errors(await checkSource(`uiParameter(name: 'C', formFrom: 'forms/bad')`, { root }))
+    .filter((x) => x.message.includes('form.html'));
+  assert.equal(q.length, 1, JSON.stringify(q));
+  assert.match(q[0].message, /^uiParameter 'C': forms\/bad\/form\.html:5:\d+: module: /);
+});
+
+test('the CLI takes formFrom paths from the Git top level of the Jenkinsfile', () => {
+  const repo = mkdtempSync(path.join(tmpdir(), 'build-ui-check-repo-'));
+  assert.equal(spawnSync('git', ['-C', repo, 'init', '-q']).status, 0);
+  mkdirSync(path.join(repo, 'ci'));
+  mkdirSync(path.join(repo, 'forms/deploy'), { recursive: true });
+  writeFileSync(path.join(repo, 'ci/Jenkinsfile'), "uiParameter(name: 'DEPLOY', formFrom: 'forms/deploy')\n");
+  writeFileSync(path.join(repo, 'forms/deploy/form.html'), '<script>classic()</script>');
+  const r = cli(['ci/Jenkinsfile'], repo);
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /ci\/Jenkinsfile:1:\d+: error: uiParameter 'DEPLOY': forms\/deploy\/form\.html has a <script> without type="module"/);
 });

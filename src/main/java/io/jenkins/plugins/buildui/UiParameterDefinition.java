@@ -9,6 +9,8 @@ import hudson.model.Item;
 import hudson.model.Job;
 import hudson.model.ParameterDefinition;
 import hudson.model.ParameterValue;
+import hudson.model.ParametersDefinitionProperty;
+import hudson.model.Run;
 import hudson.model.SimpleParameterDefinition;
 import hudson.model.StringParameterValue;
 import hudson.util.FormValidation;
@@ -49,8 +51,14 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
     private String schema;
     private String defaultJson;
     private boolean sandbox;
+    private String formFrom;
 
-    private transient Schema compiled;
+    /** The inline fields after the HTML is split; computed when first used. */
+    private transient FormCode inline;
+    /** Why a definition loaded from config.xml cannot be used; the setters would have refused it. */
+    private transient String configError;
+    /** The job whose parameters hold this definition, found when a path without a request needs it. */
+    private transient Job<?, ?> owner;
 
     @DataBoundConstructor
     public UiParameterDefinition(@NonNull String name) {
@@ -65,11 +73,66 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
     /**
      * XStream (config.xml from REST or the CLI) sets fields without the setter.
      * host.js imports {@code runtimes/<id>.js}, so an unchecked ID could load any
-     * same-origin script; an unknown one falls back to the default.
+     * same-origin script; an unknown one falls back to the default. A bad
+     * {@code formFrom} cannot be thrown here (XStream would drop the element
+     * silently), so it is kept as an error the form and every value check show.
      */
     protected Object readResolve() {
         runtime = Runtimes.orDefault(runtime, "parameter " + getName());
+        if (formFrom != null) {
+            try {
+                FormFrom.checkPath(formFrom);
+                rejectInlineFields();
+            } catch (IllegalArgumentException e) {
+                configError = e.getMessage();
+                LOGGER.warning(() -> "Parameter " + getName() + ": " + configError);
+            }
+        }
         return this;
+    }
+
+    /** The repository folder the form is read from, or null when the Jenkinsfile holds the form. */
+    @CheckForNull
+    public String getFormFrom() {
+        return formFrom;
+    }
+
+    /**
+     * The folder holds {@code form.mjs}, {@code form.html}, {@code form.css},
+     * {@code schema.json} and {@code default.json}, all optional, so the inline
+     * fields for them must stay empty: two sources for one part would leave
+     * readers guessing which one the form uses.
+     */
+    @DataBoundSetter
+    public void setFormFrom(@CheckForNull String formFrom) {
+        String f = Util.fixEmptyAndTrim(formFrom);
+        if (f != null) {
+            FormFrom.checkPath(f);
+        }
+        String old = this.formFrom;
+        this.formFrom = f;
+        try {
+            rejectInlineFields();
+        } catch (IllegalArgumentException e) {
+            this.formFrom = old;
+            throw e;
+        }
+    }
+
+    private void rejectInlineFields() {
+        if (formFrom == null) {
+            return;
+        }
+        List<String> set = new ArrayList<>();
+        if (module != null) set.add("module");
+        if (html != null) set.add("html");
+        if (css != null) set.add("css");
+        if (schema != null) set.add("schema");
+        if (defaultJson != null) set.add("defaultJson");
+        if (!set.isEmpty()) {
+            throw new IllegalArgumentException("parameter " + getName() + ": formFrom reads module, html, css, schema and defaultJson from '"
+                    + formFrom + "', so the Jenkinsfile must not set them too; remove " + String.join(", ", set));
+        }
     }
 
     @DataBoundSetter
@@ -82,9 +145,16 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
         return module;
     }
 
+    /**
+     * The inline setters check what they can when the definition is made, so a
+     * Jenkinsfile mistake fails the build that defines the form: each one
+     * builds the inline form with its new value and keeps it only if it holds.
+     */
     @DataBoundSetter
     public void setModule(@CheckForNull String module) {
+        String old = this.module;
         this.module = Util.fixEmptyAndTrim(module) == null ? null : module;
+        recheck(() -> this.module = old);
     }
 
     @CheckForNull
@@ -92,9 +162,12 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
         return html;
     }
 
+    /** May hold the whole form: a {@code <script type="module">} and {@code <style>} elements are split out ({@link SingleFileHtml}). */
     @DataBoundSetter
     public void setHtml(@CheckForNull String html) {
+        String old = this.html;
         this.html = Util.fixEmptyAndTrim(html) == null ? null : html;
+        recheck(() -> this.html = old);
     }
 
     @CheckForNull
@@ -104,7 +177,9 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
 
     @DataBoundSetter
     public void setCss(@CheckForNull String css) {
+        String old = this.css;
         this.css = Util.fixEmptyAndTrim(css) == null ? null : css;
+        recheck(() -> this.css = old);
     }
 
     @CheckForNull
@@ -114,9 +189,9 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
 
     @DataBoundSetter
     public void setSchema(@CheckForNull String schema) {
-        String s = Util.fixEmptyAndTrim(schema);
-        this.compiled = s == null ? null : Schema.compile(Json.parse(s, "schema"));
-        this.schema = s;
+        String old = this.schema;
+        this.schema = Util.fixEmptyAndTrim(schema);
+        recheck(() -> this.schema = old);
     }
 
     @CheckForNull
@@ -126,11 +201,31 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
 
     @DataBoundSetter
     public void setDefaultJson(@CheckForNull String defaultJson) {
-        String d = Util.fixEmptyAndTrim(defaultJson);
-        if (d != null) {
-            Json.parse(d, "defaultJson");
+        String old = this.defaultJson;
+        this.defaultJson = Util.fixEmptyAndTrim(defaultJson);
+        recheck(() -> this.defaultJson = old);
+    }
+
+    /** Validates the fields after a setter changed one; on failure {@code undo} restores it and the error propagates. */
+    private void recheck(Runnable undo) {
+        try {
+            rejectInlineFields();
+            inline = null;
+            inline = inlineCode();
+        } catch (IllegalArgumentException e) {
+            undo.run();
+            inline = null;
+            throw e;
         }
-        this.defaultJson = d;
+    }
+
+    private FormCode inlineCode() {
+        FormCode c = inline;
+        if (c == null) {
+            c = FormCode.of(module, html, css, schema, defaultJson, false);
+            inline = c;
+        }
+        return c;
     }
 
     /** Whether the form asks to run its code in a sandboxed iframe; see {@link #isSandboxed()}. */
@@ -145,7 +240,77 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
 
     /** True when this form's code runs in a sandboxed iframe: it asks for it, or an admin sandboxes all forms. */
     public boolean isSandboxed() {
-        return SandboxAction.applies(sandbox, module, html, css);
+        FormCode c = viewCodeOrNull();
+        return c != null && SandboxAction.applies(sandbox, c.module(), c.html(), c.css());
+    }
+
+    /**
+     * The form's code and data: the inline fields, or the formFrom folder at the
+     * head of {@code job}'s branch (cached briefly, see {@link FormFrom}).
+     * Throws {@link IllegalArgumentException} when it cannot be had.
+     */
+    FormCode code(@CheckForNull Job<?, ?> job) {
+        if (configError != null) {
+            throw new IllegalArgumentException(configError);
+        }
+        if (formFrom == null) {
+            return inlineCode();
+        }
+        if (job == null) {
+            throw new IllegalArgumentException("formFrom: no job to read '" + formFrom + "' for");
+        }
+        return FormFrom.read(job, formFrom);
+    }
+
+    /**
+     * The code a page shows, read once per request so that one page shows one
+     * version even if the cache expires while it renders. The input step has
+     * no branch head to read, so formFrom is refused there.
+     */
+    private FormCode requestCode() {
+        StaplerRequest2 req = Stapler.getCurrentRequest2();
+        if (formFrom == null || req == null) {
+            return code(req == null ? null : req.findAncestorObject(Job.class));
+        }
+        if (req.findAncestorObject(Run.class) != null) {
+            throw new IllegalArgumentException(FormFrom.UNSUPPORTED_INPUT);
+        }
+        String key = "build-ui.code." + System.identityHashCode(this);
+        Object memo = req.getAttribute(key);
+        if (memo instanceof FormCode c) {
+            return c;
+        }
+        if (memo instanceof String error) {
+            throw new IllegalArgumentException(error);
+        }
+        try {
+            FormCode c = code(req.findAncestorObject(Job.class));
+            req.setAttribute(key, c);
+            return c;
+        } catch (IllegalArgumentException e) {
+            req.setAttribute(key, e.getMessage());
+            throw e;
+        }
+    }
+
+    @CheckForNull
+    private FormCode viewCodeOrNull() {
+        try {
+            return requestCode();
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    /** Why the form cannot be shown (formFrom unreadable, unsupported job), or null. The view then shows the JSON field. */
+    @CheckForNull
+    public String getFormError() {
+        try {
+            requestCode();
+            return null;
+        } catch (IllegalArgumentException e) {
+            return e.getMessage();
+        }
     }
 
     /** Errors of {@code json} against the schema; empty when it is valid. */
@@ -157,7 +322,9 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
      * Schema errors of {@code json}, plus {@code x-git-ref} errors when the job
      * is known: such a string must name a branch or tag of the job's Git
      * repositories. A job that has not checked out yet cannot be asked, so
-     * its refs are not checked.
+     * its refs are not checked. Without a job, a formFrom value is only checked
+     * to be JSON: reading the schema needs the job, and {@link RefGuard} checks
+     * the value against it before the build starts.
      */
     public List<String> errorsFor(String json, @CheckForNull Job<?, ?> job) {
         JsonNode node;
@@ -166,7 +333,15 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
         } catch (IllegalArgumentException e) {
             return List.of(e.getMessage());
         }
-        Schema s = compiledSchema();
+        if (formFrom != null && job == null && configError == null) {
+            return List.of();
+        }
+        Schema s;
+        try {
+            s = code(job).schema();
+        } catch (IllegalArgumentException e) {
+            return List.of(e.getMessage());
+        }
         if (s == null) {
             return List.of();
         }
@@ -177,19 +352,29 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
         return errors;
     }
 
-    /** Whether the schema uses {@code x-git-ref}, so values need {@link #refErrorsFor}. */
-    boolean hasRefChecks() {
+    /**
+     * Whether a queued value needs a check that may contact the repository, which
+     * {@link RefGuard} runs off the queue lock: refs for {@code x-git-ref}, or the
+     * whole schema of a formFrom folder.
+     */
+    boolean needsQueueCheck() {
+        if (formFrom != null) {
+            return true;
+        }
         try {
-            Schema s = compiledSchema();
+            Schema s = inlineCode().schema();
             return s != null && s.node().findValue("x-git-ref") != null;
         } catch (IllegalArgumentException e) {
             return false; // QueueGuard refuses values of a schema that does not compile
         }
     }
 
-    /** Only the {@code x-git-ref} errors of {@code json}; contacts the Git server unless its refs are cached. */
-    List<String> refErrorsFor(String json, Job<?, ?> job) {
-        Schema s = compiledSchema();
+    /** The errors only {@link RefGuard} can find; contacts the repository unless the answer is cached. */
+    List<String> queueErrorsFor(String json, Job<?, ?> job) {
+        if (formFrom != null) {
+            return errorsFor(json, job);
+        }
+        Schema s = inlineCode().schema();
         List<String> errors = new ArrayList<>();
         if (s != null) {
             checkRefs(s.node(), Json.parse(json, "value of " + getName()), "", job, errors);
@@ -244,14 +429,6 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
         return req == null ? null : req.findAncestorObject(Job.class);
     }
 
-    @CheckForNull
-    Schema compiledSchema() {
-        if (compiled == null && schema != null) {
-            compiled = Schema.compile(Json.parse(schema, "schema"));
-        }
-        return compiled;
-    }
-
     @Override
     public boolean isValid(ParameterValue value) {
         return value instanceof StringParameterValue s && s.getValue() != null && errorsFor(s.getValue()).isEmpty();
@@ -263,6 +440,10 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
     }
 
     private UiParameterValue create(String value, @CheckForNull Job<?, ?> job) {
+        StaplerRequest2 req = Stapler.getCurrentRequest2();
+        if (formFrom != null && req != null && req.findAncestorObject(Run.class) != null) {
+            throw new InvalidValueException("Invalid value for parameter '" + getName() + "': " + FormFrom.UNSUPPORTED_INPUT);
+        }
         List<String> errors = errorsFor(value, job);
         if (!errors.isEmpty()) {
             throw new InvalidValueException("Invalid value for parameter '" + getName() + "': " + String.join("; ", errors));
@@ -283,10 +464,28 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
      * Not validated here: the REST API exports this getter, and a default that
      * fails a changed schema must not drop the parameter from the job's API.
      * {@link QueueGuard} refuses every build that would use it.
+     *
+     * <p>A formFrom default comes from {@code default.json} at the branch head.
+     * When that cannot be read this throws, so the build that wanted the
+     * default fails with the reason instead of starting with something else.
+     * Paths without a request (timers, the {@code build} step, {@code params} in
+     * the build that defines the parameter) read it on their own thread, bounded
+     * by {@link FormFrom#TIMEOUT_MILLIS}. In jenkins-core 2.541.1 only the
+     * parameter classes, the CLI's {@code build} command and
+     * {@code ParameterizedJobMixIn} (before it queues) call this; no queue class does.
      */
     @Override
     public UiParameterValue getDefaultParameterValue() {
         String json = getInitialJson();
+        if (formFrom != null && defaultJson == null) {
+            try {
+                Job<?, ?> job = requestJob();
+                String d = (job != null ? requestCode() : code(ownerJob())).defaultJson();
+                json = d == null ? "{}" : d;
+            } catch (IllegalArgumentException e) {
+                throw new InvalidValueException("No default for parameter '" + getName() + "': " + e.getMessage(), e);
+            }
+        }
         try {
             json = Json.write(Json.parse(json, "defaultJson"));
         } catch (IllegalArgumentException e) {
@@ -308,9 +507,39 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
         copy.html = html;
         copy.css = css;
         copy.sandbox = sandbox;
-        copy.setSchema(schema);
-        copy.setDefaultJson(json);
+        if (formFrom == null) {
+            copy.setSchema(schema);
+            copy.setDefaultJson(json);
+        } else {
+            // The copy keeps reading the folder; only its default is this value.
+            Json.parse(json, "defaultJson");
+            copy.formFrom = formFrom;
+            copy.defaultJson = Util.fixEmptyAndTrim(json);
+        }
         return copy;
+    }
+
+    /** The job whose parameters hold this definition; searched once, for paths that have no request. */
+    @CheckForNull
+    private Job<?, ?> ownerJob() {
+        Job<?, ?> known = owner;
+        if (known != null && holdsThis(known)) {
+            return known;
+        }
+        try (ACLContext ignored = ACL.as2(ACL.SYSTEM2)) {
+            for (Job<?, ?> job : Jenkins.get().allItems(Job.class)) {
+                if (holdsThis(job)) {
+                    owner = job;
+                    return job;
+                }
+            }
+        }
+        return null;
+    }
+
+    private boolean holdsThis(Job<?, ?> job) {
+        ParametersDefinitionProperty property = job.getProperty(ParametersDefinitionProperty.class);
+        return property != null && property.getParameterDefinitions().stream().anyMatch(d -> d == this);
     }
 
     /** Full name of the job whose page renders this form, for {@code ui.job}; empty outside a job. */
@@ -321,7 +550,18 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
 
     /** The form's initial JSON: the default, or {@code {}}. Used by the view. */
     public String getInitialJson() {
-        return defaultJson == null ? "{}" : defaultJson;
+        if (defaultJson != null || formFrom == null) {
+            return defaultJson == null ? "{}" : defaultJson;
+        }
+        FormCode c = viewCodeOrNull();
+        return c == null || c.defaultJson() == null ? "{}" : c.defaultJson();
+    }
+
+    /** The schema the page hands to {@code ui.schema}: the inline one, or the folder's schema.json. */
+    @CheckForNull
+    public String getFormSchema() {
+        FormCode c = viewCodeOrNull();
+        return c == null ? null : c.schemaText();
     }
 
     /** Whether the runtime compiles templates with eval; host.js then checks that CSP allows eval. */
@@ -336,28 +576,41 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
 
     /** False only when an admin requires approval and this form's code has none yet. */
     public boolean isApproved() {
-        return FormApproval.allowed(runtime, module, html, css, isSandboxed(), requestJob(), getName());
+        FormCode c = viewCodeOrNull();
+        return c != null && FormApproval.allowed(runtime, c.module(), c.html(), c.css(), isSandboxed(), requestJob(), getName());
     }
 
-    /** Content keys for the view; registering here keeps the store filled after a restart. */
+    /**
+     * Content keys for the view; registering here keeps the store filled after
+     * a restart. The parts are the split ones, so a module written in the HTML
+     * is served like one written in {@code module}.
+     */
     @CheckForNull
     public String getModuleKey() {
-        return module == null ? null : ContentStore.put(module, "mjs", "text/javascript;charset=UTF-8");
+        FormCode c = viewCodeOrNull();
+        return key(c == null ? null : c.module(), "mjs", "text/javascript;charset=UTF-8");
     }
 
     @CheckForNull
     public String getCssKey() {
-        return css == null ? null : ContentStore.put(css, "css", "text/css;charset=UTF-8");
+        FormCode c = viewCodeOrNull();
+        return key(c == null ? null : c.css(), "css", "text/css;charset=UTF-8");
     }
 
     @CheckForNull
     public String getHtmlKey() {
-        return html == null ? null : ContentStore.put(html, "html.txt", "text/plain;charset=UTF-8");
+        FormCode c = viewCodeOrNull();
+        return key(c == null ? null : c.html(), "html.txt", "text/plain;charset=UTF-8");
+    }
+
+    @CheckForNull
+    private static String key(@CheckForNull String text, String extension, String contentType) {
+        return text == null ? null : ContentStore.put(text, extension, contentType);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(getName(), getDescription(), runtime, module, html, css, schema, defaultJson, sandbox);
+        return Objects.hash(getName(), getDescription(), runtime, module, html, css, schema, defaultJson, sandbox, formFrom);
     }
 
     @Override
@@ -372,6 +625,7 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
                 && Objects.equals(css, o.css)
                 && Objects.equals(schema, o.schema)
                 && Objects.equals(defaultJson, o.defaultJson)
+                && Objects.equals(formFrom, o.formFrom)
                 && sandbox == o.sandbox;
     }
 

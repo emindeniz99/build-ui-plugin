@@ -29,10 +29,10 @@ frontend build step.
 ## Status
 
 0.1.0 is ready to release (see [`CHANGELOG.md`](./CHANGELOG.md)). The first
-tag comes after graduation, from the standalone repository. Tested on Jenkins 2.541.1 and 2.580.1: 47 JenkinsRule tests, 18
-plain unit tests, 26 browser tests (Chromium) under enforced CSP and 20
-checker tests. Maven reports 74 Java tests: our 65 plus 9 that the plugin
-parent generates, one of them skipped. CI also
+tag comes after graduation, from the standalone repository. Tested on Jenkins 2.541.1 and 2.580.1; `formFrom` and
+single-file forms so far only on 2.541.1. The project has 85 JenkinsRule
+tests, 29 plain unit tests, 45 browser tests (Chromium) under enforced CSP
+and 28 checker tests (counted 2026-10-27). CI also
 runs the browser tests in Firefox and WebKit on 2.580.1. The reference
 form is [`examples/reference.Jenkinsfile`](./examples/reference.Jenkinsfile)
 (53 lines). Design, measurements and open questions:
@@ -45,8 +45,9 @@ form is [`examples/reference.Jenkinsfile`](./examples/reference.Jenkinsfile)
 | [`examples/reference.Jenkinsfile`](./examples/reference.Jenkinsfile) | The ease test: conditional field, multi-select, server data and a reusable section in 53 lines |
 | [`examples/parallel-envs.Jenkinsfile`](./examples/parallel-envs.Jenkinsfile) | Deploy to several test environments: cards with each environment's last build (from `jenkinsRuns` history), search, select shown, services, auto-deploy |
 | [`examples/release.Jenkinsfile`](./examples/release.Jenkinsfile) | Cut a release: branch and base tag from `gitRefs` (newest version first), a preview of the next tag, a special-version override, and `x-git-ref` so the controller rejects refs that do not exist |
+| [`examples/form-from/`](./examples/form-from) | A form kept in the repository with `formFrom`: one `form.html` with style, markup and module, plus `schema.json` and `default.json` |
 
-The browser suite runs all three against a real Jenkins.
+The browser suite runs all four against a real Jenkins.
 
 ## Use it
 
@@ -81,21 +82,103 @@ export default function mount({ root, ui, runtime: { html, render, useState } })
 (Pipeline Utility Steps). As with every declarative parameter, the first run
 registers it; *Build with Parameters* shows the form from the second run on.
 
+### One HTML text for the whole form
+
+The simplest form is one `html` text with a `<style>`, the markup and one
+`<script type="module">`:
+
+```groovy
+uiParameter(name: 'GREETING', html: '''
+<style>.hi { font-weight: bold; }</style>
+<p class="hi">Hello</p>
+<script type="module">
+export default function mount({ root, ui }) {
+  root.querySelector('.hi').textContent = 'Hello, ' + ui.job
+  ui.setValue({ greeted: true })
+}
+</script>''')
+```
+
+Jenkins's CSP blocks inline scripts, and no browser can load an HTML file as
+a module, so the controller splits the text before it serves it. The
+script's content becomes the module, every `<style>` becomes CSS (after
+`css`, if you set both), and the rest stays HTML. Approval, the sandbox and
+the eval setting see the parts as if you had written `module`, `css` and
+`html` separately. The script must `export default function mount(...)` like
+any module.
+
+The controller refuses the form, with the reason, when the text has:
+
+- a `<script>` without `type="module"`, or any `<script src=...>`: neither
+  would run under Jenkins's CSP, and a form loads no other code;
+- more than one module script, or a module script and a `module` field;
+- an inline event handler such as `onclick=`, which CSP blocks; attach
+  handlers in the module.
+
+A script ends at the first `</script`, and a style at the first `</style`,
+as in any HTML page.
+
+### Forms in the repository (`formFrom`)
+
+```groovy
+uiParameter(name: 'DEPLOY', formFrom: 'forms/deploy')
+```
+
+`formFrom` names a folder relative to the repository root. Every file in it
+is optional:
+
+| File | Takes the place of |
+|---|---|
+| `form.mjs` | `module` |
+| `form.html` | `html`, single-file form included |
+| `form.css` | `css` |
+| `schema.json` | `schema`; without it the controller checks only that the value is JSON |
+| `default.json` | `defaultJson` |
+
+Jenkins reads the folder from the head of the branch the job builds, on the
+controller, with the job's own SCM and credentials and without a workspace
+or an agent. The job decides the repository, branch and path; nothing the
+browser sends picks them. [`examples/form-from/`](./examples/form-from)
+shows a whole folder.
+
+- Supported jobs: branch jobs of a multibranch Pipeline, and Pipeline jobs
+  defined by *Pipeline script from SCM*. The SCM must support lightweight
+  reads (the Git plugin does).
+- Not supported: inline Pipeline scripts, freestyle jobs and the `input`
+  step. The form then shows the reason and its JSON field, and the
+  controller refuses values and defaults with the same reason. It never
+  falls back to older content.
+- The Jenkinsfile must not set `module`, `html`, `css`, `schema` or
+  `defaultJson` next to `formFrom`. The path takes letters, digits, `.`, `_`
+  and `-` between `/`, at most 200 characters, with no `..` and no leading
+  `/`.
+- Limits: 512 KiB each for `form.mjs`, `form.html` and `form.css`, 256 KiB
+  and the JSON limits below for the JSON files, and 20 seconds per read.
+- A read stays cached for 10 seconds per job and folder. The page, the
+  submit check and the queue check use the same read, so they see the same
+  `schema.json` within that window.
+- When the build that first defines the parameter reads `params`, Pipeline
+  asks the new parameter for its default, so that build reads `default.json`.
+  A missing folder or a broken file then fails that build with the reason.
+
 ### When a changed form shows up
 
-Jenkins keeps a job's parameters, this form included, in the job's
-configuration, and only a build that runs the new Jenkinsfile writes them
-there. After you push a change to the module, HTML, CSS or schema:
+With `formFrom`, a push shows up on the next page load once the 10-second
+cache has expired. No build has to run. The browser gets the new code then
+too: content URLs carry the SHA-256 of the code, so no cache serves the old
+version. With approval of form code on, the new version waits for approval
+and the form shows its JSON field until then.
+
+Forms written inline in the Jenkinsfile work differently. Jenkins keeps a
+job's parameters in the job's configuration, and only a build that runs the
+new Jenkinsfile writes them there. After you push a change to the module,
+HTML, CSS or schema:
 
 - A build has to run the new Jenkinsfile once. That build still asks for and
   uses the old form; *Build with Parameters* shows the new one afterwards.
 - In a multibranch job with a webhook, the push starts that build, so the
   form updates without anyone clicking.
 - Without such a trigger, run the job once, for example with its defaults.
-- The browser gets the new code on the next page load. Content URLs carry
-  the SHA-256 of the code, so no cache serves the old version.
-- With approval of form code on, the new version waits for approval and the
-  form shows its JSON field until then.
 
 ### `uiParameter` fields
 
@@ -103,8 +186,9 @@ there. After you push a change to the module, HTML, CSS or schema:
 |---|---|
 | `name` | Parameter name, as in `params.NAME` |
 | `runtime` | `preact11-htm3` (default), `none`, `schema-form` or `alpine3-csp`; `alpine3` and `vue3` only where an admin allows them ([below](#runtimes-that-need-eval-off-by-default)) |
-| `module` | An ES module whose default export is `mount` (not needed for `schema-form`) |
-| `html` | Markup put into the form's root before `mount` runs |
+| `formFrom` | A folder of the repository that holds the form's files ([above](#forms-in-the-repository-formfrom)); excludes the five fields below it |
+| `module` | An ES module whose default export is `mount` (not needed for `schema-form` or a single-file `html`) |
+| `html` | Markup put into the form's root before `mount` runs; may hold the whole form ([above](#one-html-text-for-the-whole-form)) |
 | `css` | Styles for the form; they apply only inside its shadow root |
 | `schema` | JSON Schema the controller checks every value against (subset below) |
 | `defaultJson` | The value for builds that bring none (cron, `build` without parameters) |
@@ -298,7 +382,8 @@ schema.
 ### `input` step
 
 `input parameters: [uiParameter(...)]` shows the same form when a run pauses
-for input, and returns the JSON string.
+for input, and returns the JSON string. `formFrom` does not work there; write
+the form inline.
 
 ### Approval of form code (optional)
 
@@ -394,7 +479,9 @@ it loads. A theme change after that does not reach the frame.
 The controller checks every value, whatever started the build: the form,
 `buildWithParameters`, the `build` step, and a queue-level check for values
 made in code. An invalid value gets HTTP 400 with the reason, or fails the
-`build` step with it.
+`build` step with it. A `formFrom` value queued another way (a `build` step,
+a timer, a script) waits in the queue while the controller reads
+`schema.json`, as for `x-git-ref` below, and is cancelled if it fails.
 
 - JSON: at most 256 KiB, nesting depth 32, 1000 items per array, 1000
   properties per object, no duplicate keys.
@@ -420,11 +507,17 @@ pnpm --dir projects/jenkins-ui/js install   # once; the checker needs esbuild
 pnpm --dir projects/jenkins-ui/js check path/to/Jenkinsfile
 ```
 
-Paths are relative to the directory you run the command from.
+Paths are relative to the directory you run the command from. A `formFrom`
+path is relative to the repository root: the Git top level of the
+Jenkinsfile, or its directory outside Git. When that folder exists on disk,
+the checker reads its files and checks them like inline fields; when it
+does not, you get a warning.
 
 The checker finds every `uiParameter` and `uiPanel` call and reports, with
 Jenkinsfile line numbers: module syntax errors, `import` statements, a missing
-`export default`, `<script>` and inline handlers in `html`, schema keywords
+`export default`, the single-file rules for `html` (classic or `src`
+scripts, two module scripts, inline handlers), a bad `formFrom` path or
+inline fields next to it, `<script>` and inline handlers in a panel's `html`, schema keywords
 and keyword values the controller rejects, invalid JSON in `schema`,
 `defaultJson` and `data` (duplicate keys and the limits above included),
 Groovy escapes such as `\d` that Jenkins cannot compile, unknown
@@ -438,8 +531,9 @@ file with no `uiParameter` or `uiPanel` call fails the check.
 ### CSP and styling
 
 The plugin works with Jenkins's enforced policy and never weakens it. Inline
-event handlers (`onclick="…"`) in `html` do not run; attach handlers in the
-module. Put styles in `css`. Recommended: set Jenkins's Resource Root URL, so
+event handlers (`onclick="…"`) do not run: a parameter refuses them, and in a
+panel's `html` they stay dead. Attach handlers in the module. Put styles in
+`css` or in a `<style>` of a single-file `html`. Recommended: set Jenkins's Resource Root URL, so
 workspace files and artifacts are not served from the Jenkins origin.
 
 ## How to run
