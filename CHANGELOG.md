@@ -10,8 +10,10 @@ The first release. It needs Jenkins 2.541.1 or newer and Java 17.
   module with HTML and CSS. The value is one JSON string in `params.NAME`,
   validated on the controller against a JSON Schema subset on every path: the
   form, `buildWithParameters`, the Pipeline `build` step and the build queue.
-- Runtimes: `preact11-htm3` (Preact 11.0.1, htm 3.1.1), `none` (plain DOM)
-  and `schema-form` (a form drawn from the schema alone, with `x-show-if`).
+- Runtimes: `preact11-htm3` (Preact 11.0.1, htm 3.1.1), `none` (plain DOM),
+  `schema-form` (a form drawn from the schema alone, with `x-show-if`) and
+  `alpine3-csp` (Alpine 3.17.4, CSP build). Alpine starts only inside the
+  form; `Alpine.start()` throws.
 - Works in Pipeline and freestyle jobs, in `input` steps
   (`input parameters: [uiParameter(...)]`), and as panels on the build page
   (`uiPanel` step).
@@ -42,6 +44,17 @@ The first release. It needs Jenkins 2.541.1 or newer and Java 17.
 - A Jenkinsfile checker: `pnpm --dir projects/jenkins-ui/js check <file>`.
 - Examples: a reference form, parallel environment deploys and a release
   form, all run by the browser test suite.
+
+### Runtimes that need eval (optional)
+
+- `alpine3` (Alpine 3.17.4) and `vue3` (Vue 3.5.44 with its template
+  compiler), off by default. An admin allows them with *Allow runtimes that
+  need eval* or `unclassified.buildUi.allowEvalRuntimes`. They work only
+  while Jenkins sends CSP in report-only mode.
+- While the setting is off, their forms and panels show a notice and the
+  JSON field, and Jenkins never sends their code. With the setting on and CSP
+  enforced, the form says its runtime needs eval and shows the JSON field.
+- The checker warns about these runtimes.
 
 ### Approval (optional)
 

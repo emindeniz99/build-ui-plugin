@@ -87,13 +87,29 @@ test('bad JSON in defaultJson and uiPanel data is reported with the field name',
   assert.match(p[1].message, /^uiPanel 'Summary': data is not valid JSON/);
 });
 
+test('a runtime that needs eval is a warning: it breaks the day Jenkins enforces CSP', async () => {
+  const contract = JSON.parse(read('../../src/main/resources/io/jenkins/plugins/buildui/contract.json'));
+  assert.deepEqual([...contract.evalRuntimes].sort(), ['alpine3', 'vue3']);
+  const p = await checkSource(`
+    uiParameter(name: 'A', runtime: 'vue3', module: 'export default () => {}')
+    uiPanel title: 'B', runtime: 'alpine3', module: 'export default () => {}'
+    uiParameter(name: 'C', runtime: 'alpine3-csp', module: 'export default () => {}')`);
+  assert.deepEqual(errors(p), []);
+  assert.deepEqual(p.map((x) => x.message.split(';')[0]), [
+    "uiParameter 'A': runtime 'vue3' needs eval",
+    "uiPanel 'B': runtime 'alpine3' needs eval",
+  ]);
+  assert.match(p[0].message, /stops working when Jenkins enforces its Content Security Policy/);
+  assert.match(p[0].message, /alpine3-csp/);
+});
+
 test('unknown runtimes, missing modules and non-object schema-form schemas are errors', async () => {
   const p = errors(await checkSource(`
-    uiParameter(name: 'A', runtime: 'vue3', module: 'export default () => {}')
+    uiParameter(name: 'A', runtime: 'vue4', module: 'export default () => {}')
     uiParameter(name: 'B')
     uiParameter(name: 'D', runtime: 'schema-form', schema: '{"type":"array"}')`));
   assert.deepEqual(p.map((x) => x.message.split(';')[0]), [
-    "uiParameter 'A': unknown runtime 'vue3'",
+    "uiParameter 'A': unknown runtime 'vue4'",
     "uiParameter 'B': module is required unless runtime is 'schema-form'",
     "uiParameter 'D': runtime 'schema-form' needs a schema whose type is \"object\"",
   ]);

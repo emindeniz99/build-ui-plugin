@@ -342,6 +342,10 @@ export async function checkSource(src) {
     const runtime = runtimeToken ? runtimeToken.value : 'preact11-htm3';
     if (runtimeToken && !contract.runtimes.includes(runtime)) {
       report('error', `unknown runtime '${runtime}'; available: ${contract.runtimes.join(', ')}`, runtimeToken.start);
+    } else if (contract.evalRuntimes.includes(runtime)) {
+      report('warning', `runtime '${runtime}' needs eval; it runs only if an administrator allows runtimes that need eval,`
+        + ' and it stops working when Jenkins enforces its Content Security Policy. alpine3-csp, preact11-htm3 and schema-form need no eval',
+      runtimeToken.start);
     }
 
     const schemaToken = field('schema');

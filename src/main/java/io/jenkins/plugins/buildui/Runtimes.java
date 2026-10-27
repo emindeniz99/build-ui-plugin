@@ -12,6 +12,9 @@ public final class Runtimes {
     public static final String NONE = "none";
     public static final String PREACT = "preact11-htm3";
     public static final String SCHEMA_FORM = "schema-form";
+    public static final String ALPINE_CSP = "alpine3-csp";
+    public static final String ALPINE = "alpine3";
+    public static final String VUE = "vue3";
 
     public static final List<String> ALL = Contract.RUNTIMES;
 
@@ -33,5 +36,15 @@ public final class Runtimes {
         }
         LOGGER.warning(() -> "Unknown build-ui runtime '" + id + "' in " + owner + "; using " + PREACT);
         return PREACT;
+    }
+
+    /** Whether the runtime compiles templates with eval, which enforced CSP blocks. */
+    static boolean needsEval(String id) {
+        return Contract.EVAL_RUNTIMES.contains(id);
+    }
+
+    /** False for a runtime that needs eval while an admin has not allowed such runtimes. */
+    static boolean allowed(String id) {
+        return !needsEval(id) || BuildUiConfiguration.get().isAllowEvalRuntimes();
     }
 }

@@ -23,9 +23,9 @@ original RFC is issue #94; the design here replaces it where they disagree.
 | Publishing | GitHub Releases (`.hpi`) first; the Jenkins update center at graduation | No hosting review on the critical path. |
 | Jenkins / Java | Minimum 2.541.1, Java 17 bytecode; CI covers 2.541.x and the current LTS | 2.541 is the oldest LTS line with core CSP. |
 | Core | Framework-agnostic; knows only the `mount` contract (section 2) | A runtime can come and go without a core rewrite. |
-| v1 runtimes | `none` and `preact11-htm3` | One stable React-style renderer plus plain JS. |
+| v1 runtimes | `none`, `preact11-htm3`, `schema-form` and `alpine3-csp` | One stable React-style renderer, plain JS, a no-JS tier, and Alpine's CSP build, which passed strict CSP in section 6. |
 | Later runtimes | `solid2-html` not planned: it lost the comparison in section 7 | Four times larger, and breaks plain custom elements even when they are defined first. |
-| Eval runtimes (Vue, Alpine) | Only behind a global admin setting, off by default | Jenkins runs CSP in report-only mode by default, so these would work for months and break on the day an admin enforces CSP. |
+| Eval runtimes (Vue, Alpine) | `alpine3` and `vue3` ship behind `allowEvalRuntimes`, a global admin setting, off by default (section 12) | Jenkins runs CSP in report-only mode by default, so these would work for months and break on the day an admin enforces CSP. The plugin never adds `unsafe-eval` to the policy. |
 | Component library | None in v1; packs (Web Awesome and others) stay possible later | Both motivating forms need inputs, checkboxes and cards only. |
 | Approval of form code | An admin setting, off by default (owner, 2026-10-23), built on script-security | The owner trusts everyone with push access and wants no friction by default; other Jenkins setups can opt in. |
 | Surfaces, in order | Build with Parameters form, then the `input` step, then panels on the build page (`uiPanel` step). All three are built. | The `input` step is the same form problem; build-page panels are a different product. |
@@ -156,7 +156,8 @@ validates them and nobody approves them. Choices and the facts behind them:
   an error.
 - The checker reports `on*=` attributes and `<script>` in `html`.
 - Enforced mode is tested on a real Jenkins. Report-only mode, the default on
-  a production Jenkins, is tested only in the lab; it is the looser case.
+  a production Jenkins, is tested on a real Jenkins for the eval runtimes
+  (section 12); it is the looser case.
 
 ## 5. Validation (Tested)
 
@@ -266,7 +267,8 @@ Other measured behaviour:
   their classic attack strings in under 1 ms, but `^(.*?,){14}P` against a
   30-field CSV line took 9.7 s and `^(a+)+\1$` took 1.3 s. The 50 ms budget
   stops the first in the test suite.
-- Runtime bundles, minified and gzipped: `preact11-htm3` 6.8 KB.
+- Runtime bundles, minified and gzipped: `preact11-htm3` 6.8 KB,
+  `alpine3-csp` 23.3 KB, `alpine3` 19.4 KB, `vue3` 65.6 KB.
 
 Facts behind the measurements: Jenkins enforces UI CSP only when an admin
 turns it on, since 2.539
@@ -342,7 +344,6 @@ JenkinsRule tests, 8 browser tests).
 
 ## 10. Not built yet
 
-- Eval-based runtimes behind an admin setting (none ships, so no setting yet).
 - A sandbox for untrusted code (Remote DOM): declined by the owner for now.
 - A browser test of approval: `hpi:run` runs without security, where
   script-security approves everything, so `FormApprovalTest` covers approval
@@ -370,6 +371,99 @@ serving plugins for it (about a year back), or when a needed API is newer.
 Java follows the baseline. CI always tests the minimum line and the current
 LTS line. Every raise goes in `CHANGELOG.md`.
 
-Size budgets (gzip): host 3 KB, `preact11-htm3` 8 KB, `schema-form` 9 KB.
-`pnpm vendor:check` fails past a budget, so growth past it is a decision
-taken in the commit that raises it. Today: 2.7, 6.7 and 7.5 KB.
+Size budgets (gzip): host 3 KB, `preact11-htm3` 8 KB, `schema-form` 9 KB,
+`alpine3-csp` 25 KB, `alpine3` 21 KB, `vue3` 68 KB. `pnpm vendor:check` fails
+past a budget, so growth past it is a decision taken in the commit that
+raises it. Today: 2.6, 6.7, 7.3, 23.3, 19.4 and 65.6 KB.
+
+## 12. Alpine and Vue runtimes (Tested)
+
+Three runtimes, bundled from `js/runtimes/<id>.mjs` like the others:
+
+| ID | Library | `runtime` holds | Needs eval |
+|---|---|---|---|
+| `alpine3-csp` | `@alpinejs/csp` 3.17.4 | `Alpine`, `start(root)` | no |
+| `alpine3` | `alpinejs` 3.17.4 | `Alpine`, `start(root)` | yes |
+| `vue3` | Vue 3.5.44, `vue.esm-browser.prod.js` (template compiler included) | Vue's whole API | yes |
+
+`contract.json` lists the eval runtimes under `evalRuntimes`. `Runtimes`
+reads it on the controller and `check.mjs` reads it in the checker, which
+warns when a Jenkinsfile uses one.
+
+### Mechanism
+
+- `BuildUiConfiguration.allowEvalRuntimes` is off by default and settable
+  with JCasC (`unclassified.buildUi.allowEvalRuntimes`). Its description
+  says these runtimes stop working the day Jenkins enforces CSP.
+- Setting off: the form or panel view renders a notice and the JSON field,
+  with no `build-ui-root` and no `host.js`, as `FormApproval` does. The code
+  never reaches the content store and the browser never loads the runtime.
+  The view checks the setting before approval, so blocked code does not
+  reach the pending list. Allowed code still needs approval when approval is
+  on.
+- Setting on: the view marks the root `data-eval="true"`. Before it loads
+  such a runtime, `host.js` calls `new Function('')` once per page. If that
+  throws, it shows "This form's runtime vue3 needs eval, which this Jenkins's
+  Content Security Policy blocks." with the JSON field, and skips the
+  download.
+- The browser check is the source of truth because a reverse proxy can add
+  its own policy, which the controller cannot see.
+- Alpine runs only inside the form: the runtimes replace `Alpine.start()`
+  with a function that throws, and `start(root)` calls
+  `Alpine.initTree(root)` and returns `() => Alpine.destroyTree(root)`. Vue
+  forms call `createApp(...).mount(root)` and return `app.unmount`.
+
+### Measured facts
+
+Chromium (Playwright 1.56.1), 2026-10-23, under Jenkins 2.541.1's policy.
+Alpine lifecycle from `js/lab/alpine-shadow-probe.mjs` (`@alpinejs/csp`
+3.17.4 as it ships); eval behaviour from `js/lab/eval-runtime-probe.mjs`
+(the shipped bundles); the browser suite repeats the main ones on a real
+Jenkins.
+
+- `Alpine.initTree(root)` without `start()` runs `x-data`, `init()`,
+  `x-model`, `x-text`, `x-show`, `x-for` and `x-if` inside a shadow root.
+  Markup on the page outside the form stays untouched.
+- `Alpine.start()` initialised `x-data` markup on the page outside any
+  form, and markup added to the page later, because it observes `document`.
+  It did not initialise a form waiting in a shadow root. On a Jenkins page
+  it can only do harm.
+- Two forms with their own component names keep separate state.
+- Two forms that register the same `Alpine.data` name: each top-level
+  component kept its own data, but a component created later inside the
+  first form (by `x-if`) got the second form's definition. Names are global
+  to the page; the README tells authors to name components per form.
+- `Alpine.destroyTree(root)` calls `destroy()`, stops `$watch` callbacks and
+  `x-text` updates, and detaches `x-model`. Removing a form's DOM without it
+  calls no `destroy()`, and its watchers keep running.
+- Importing either Alpine bundle sets
+  `Element.prototype._x_toggleAndCascadeWithTransitions` (read in the
+  bundle).
+- Enforced CSP: `new Function('')` throws `EvalError` and fires a
+  `securitypolicyviolation` event, with no console message of its own.
+  `alpine3`'s `start(root)` returns normally, leaves the form unrendered,
+  logs "Alpine Expression Error" warnings and throws uncaught errors later.
+  `vue3`'s `mount` throws `EvalError` and leaves the root empty.
+- Report-only CSP: `alpine3` and `vue3` render, and the page fires one
+  `securitypolicyviolation` event per eval with disposition `report`.
+  Chromium prints nothing to the console for them.
+- Jenkins 2.541.1 picks the CSP header through `CspHeaderDecider`
+  extensions, read per request (Fact: bytecode of `jenkins-core` 2.541.1).
+  The highest ordinal reads the system property
+  `jenkins.security.csp.CspHeader.headerName`; set to
+  `Content-Security-Policy-Report-Only` it overrides development mode, which
+  enforces CSP under `hpi:run` and JenkinsRule. The browser suite sets and
+  clears it through the script console, so one Jenkins tests both modes.
+
+### Limits
+
+- `alpine3` and `vue3` break for every user on the day an admin enforces
+  CSP. Their forms then fall back to the JSON field.
+- In report-only mode the browser reports each eval as a violation to the
+  `report-uri` Jenkins names (Assumption: we saw the events, not the
+  requests). Jenkins's log at default levels showed nothing for them.
+- `alpine3-csp` expressions are property paths and simple calls; logic
+  belongs in `Alpine.data` components.
+- `x-teleport` finds its target with `document.querySelector` (read in the
+  bundle), so it cannot target an element inside the form. Not tested.
+

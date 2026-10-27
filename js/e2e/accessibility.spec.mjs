@@ -52,6 +52,19 @@ test.describe('accessibility', () => {
     expect(await axe(page)).toEqual([]);
   });
 
+  test('the alpine3-csp README form has no axe violations, conditional field shown', async ({ page, request }) => {
+    const readme = readFileSync(new URL('../../README.md', import.meta.url), 'utf8');
+    const param = readme.match(/```groovy\n(uiParameter\([\s\S]*?alpine3-csp[\s\S]*?)```/)[1];
+    await pipelineJob(request, 'a11y-alpine', `pipeline { agent none
+      parameters { ${param} }
+      stages { stage('s') { steps { echo 'ok' } } } }`);
+    await build(request, 'a11y-alpine');
+    await page.goto('job/a11y-alpine/build?delay=0sec');
+    await page.locator('input[name="deploy"]').check();
+    await expect(page.locator('select[name="env"]')).toBeVisible();
+    expect(await axe(page)).toEqual([]);
+  });
+
   test('the error fallback is announced and labelled', async ({ page, request }) => {
     await pipelineJob(request, 'a11y-broken', `
       pipeline { agent none

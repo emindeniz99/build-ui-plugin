@@ -17,8 +17,9 @@ frontend build step.
   the Pipeline `build` step.
 - **Ease test:** a reference form with a conditional field, a multi-select,
   server data and a reusable section fits in about 60 Jenkinsfile lines.
-- **Out of scope for v1:** a component library, renderers that need
-  `unsafe-eval`, TSX, and sandboxing untrusted code.
+- **Out of scope for v1:** a component library, TSX, and sandboxing
+  untrusted code. Renderers that need eval (`alpine3`, `vue3`) ship off by
+  default, behind an admin setting.
 - **Known limit:** with the default settings, anyone who can push a
   Jenkinsfile can run JavaScript in the browser of every user who opens the
   form, admins included. Run it on a Jenkins where you trust everyone with
@@ -84,7 +85,7 @@ registers it; *Build with Parameters* shows the form from the second run on.
 | Field | Meaning |
 |---|---|
 | `name` | Parameter name, as in `params.NAME` |
-| `runtime` | `preact11-htm3` (default), `none` or `schema-form` |
+| `runtime` | `preact11-htm3` (default), `none`, `schema-form` or `alpine3-csp`; `alpine3` and `vue3` only where an admin allows them ([below](#runtimes-that-need-eval-off-by-default)) |
 | `module` | An ES module whose default export is `mount` (not needed for `schema-form`) |
 | `html` | Markup put into the form's root before `mount` runs |
 | `css` | Styles for the form; they apply only inside its shadow root |
@@ -133,6 +134,79 @@ keys, Enter and Tab reach `document` and `window` listeners as usual.
   `"x-show-if": { "deploy": true }` appears only while its sibling matches, and
   its value is dropped while hidden, from the initial value too. A boolean
   nobody touched is `false`, as its unchecked box shows.
+- `alpine3-csp`: Alpine 3.17.4, CSP build. `runtime` holds `Alpine` and
+  `start(root)`, which starts Alpine inside the form and returns the cleanup.
+  23.3 KB gzipped. Expressions in `html` are property paths and simple calls,
+  without eval; the logic lives in components the module registers with
+  `Alpine.data`, as in the example below.
+
+```groovy
+uiParameter(
+  name: 'DEPLOY',
+  runtime: 'alpine3-csp',
+  defaultJson: '{"branch":"main","deploy":false,"env":"dev"}',
+  html: '''
+<div x-data="deployForm">
+  <label>Branch <input name="branch" x-model="branch"></label>
+  <label><input type="checkbox" name="deploy" x-model="deploy"> Deploy</label>
+  <label x-show="deploy">Environment
+    <select name="env" x-model="env"><option>dev</option><option>prod</option></select>
+  </label>
+</div>''',
+  module: '''
+export default function mount({ root, ui, runtime: { Alpine, start } }) {
+  Alpine.data('deployForm', () => ({
+    ...ui.value,
+    init() { for (const key of ['branch', 'deploy', 'env']) this.$watch(key, () => this.save()) },
+    save() { ui.setValue({ branch: this.branch, deploy: this.deploy, env: this.env }) },
+  }))
+  return start(root)
+}''')
+```
+
+Two rules come from how Alpine works. Return `start(root)` and never call
+`Alpine.start()`: it would start Alpine on the whole Jenkins page, so the
+runtime makes it throw. And `Alpine.data` names are shared by every form on
+the page, so give each form its own names, for example after the parameter.
+
+### Runtimes that need eval (off by default)
+
+`alpine3` (Alpine 3.17.4, 19.4 KB gzipped, same `runtime` as `alpine3-csp`)
+and `vue3` (Vue 3.5.44 with its template compiler, 65.6 KB gzipped, `runtime`
+holds Vue's whole API) turn templates into code with eval. Jenkins's Content
+Security Policy forbids eval. Jenkins sends that policy in report-only mode
+unless an admin enforces it, so these runtimes work today and stop working the
+day an admin enforces CSP. That is why they are off by default.
+
+- An admin allows them with *Allow runtimes that need eval* under Manage
+  Jenkins » System » Build UI, or with Configuration as Code:
+
+  ```yaml
+  unclassified:
+    buildUi:
+      allowEvalRuntimes: true
+  ```
+
+- While the setting is off, a form or panel with such a runtime shows a notice
+  and its JSON field, and Jenkins never sends its code or loads the runtime.
+- With the setting on and CSP enforced, the form says "This form's runtime
+  needs eval, which this Jenkins's Content Security Policy blocks" and shows
+  the JSON field. The runtime file is not loaded.
+- With the setting on and CSP in report-only mode, the form works, and the
+  browser reports each eval to Jenkins as a CSP violation.
+- The plugin never adds `unsafe-eval` to Jenkins's policy.
+- Approval of form code applies to these runtimes as to the others. A form
+  whose runtime is blocked does not reach the pending list.
+
+A Vue form puts its template in `html` and mounts the app on `root`:
+
+```js
+export default function mount({ root, ui, runtime: { createApp } }) {
+  const app = createApp({ data: () => ({ ...ui.value }), watch: { branch(branch) { ui.setValue({ branch }) } } })
+  app.mount(root)
+  return () => app.unmount()
+}
+```
 
 ### Data providers
 
@@ -280,7 +354,7 @@ and keyword values the controller rejects, invalid JSON in `schema`,
 `defaultJson` and `data` (duplicate keys and the limits above included),
 Groovy escapes such as `\d` that Jenkins cannot compile, and unknown
 runtimes. A `pattern` that JavaScript cannot compile gets a warning, since
-the controller compiles it as Java. It reads string literals only; a field built from
+the controller compiles it as Java. It warns about runtimes that need eval. It reads string literals only; a field built from
 variables or a `"${…}"` GString gets a warning. It does not check `defaultJson`
 against the schema; the controller does that when a build uses the default. A
 file with no `uiParameter` or `uiPanel` call fails the check.

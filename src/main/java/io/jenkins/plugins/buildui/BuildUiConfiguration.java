@@ -16,6 +16,7 @@ public class BuildUiConfiguration extends GlobalConfiguration {
 
     private List<ArgoCdServer> argoCdServers = new ArrayList<>();
     private boolean requireApproval;
+    private boolean allowEvalRuntimes;
 
     public BuildUiConfiguration() {
         load();
@@ -52,6 +53,22 @@ public class BuildUiConfiguration extends GlobalConfiguration {
     @DataBoundSetter
     public void setRequireApproval(boolean requireApproval) {
         this.requireApproval = requireApproval;
+        save();
+    }
+
+    /**
+     * Off by default: forms and panels whose runtime needs eval (see
+     * {@link Contract#EVAL_RUNTIMES}) show only their JSON, and their code is
+     * never sent. Such runtimes work only while Jenkins sends CSP in
+     * report-only mode.
+     */
+    public boolean isAllowEvalRuntimes() {
+        return allowEvalRuntimes;
+    }
+
+    @DataBoundSetter
+    public void setAllowEvalRuntimes(boolean allowEvalRuntimes) {
+        this.allowEvalRuntimes = allowEvalRuntimes;
         save();
     }
 

@@ -1,18 +1,24 @@
 <?jelly escape-by-default='true'?>
 <!--
   A uiPanel on the build page. Same markup as the parameter, so host.js mounts it the same way.
-  Panel code that still waits for approval is never sent; the page shows the panel's data instead.
+  Panel code that still waits for approval, or whose runtime needs eval that an administrator
+  has not allowed, is never sent; the page shows the panel's data instead.
 -->
 <j:jelly xmlns:j="jelly:core">
   <tr>
     <td colspan="2" class="build-ui-panel">
       <h2>${it.title}</h2>
       <j:choose>
+        <j:when test="${!it.runtimeAllowed}">
+          <p class="build-ui-pending">${%The runtime of this panel needs eval, which an administrator has not allowed under Manage Jenkins » System » Build UI.} <code>runtime: ${it.runtime}</code></p>
+          <pre class="build-ui-value">${it.data}</pre>
+        </j:when>
         <j:when test="${it.approved}">
           <div class="build-ui-root"
                data-name="${it.title}"
                data-job="${it.jobFullName}"
                data-runtime="${it.runtime}"
+               data-eval="${it.needsEval}"
                data-module="${it.moduleKey}"
                data-css="${it.cssKey}"
                data-html="${it.htmlKey}"/>
