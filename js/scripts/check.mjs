@@ -7,7 +7,8 @@
 //
 // It reads Groovy string literals only. A field built from variables or a
 // "${...}" GString cannot be checked and gets a warning instead.
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { build } from 'esbuild';
@@ -306,10 +307,153 @@ function checkHtml(html, report) {
   }
 }
 
+const HANDLER = /\s(on[a-z]+)\s*=/i;
+const SRC = /(?:^|[\s/])src(?:\s*=|[\s/]|$)/i;
+const MODULE_TYPE = /(?:^|[\s/])type\s*=\s*(?:"\s*module\s*"|'\s*module\s*'|module(?=[\s/]|$))/i;
+const START_TAG = /^<(script|style)(?=[\s/>]|$)/i;
+
+/**
+ * Splits a uiParameter's html the way the controller does (SingleFileHtml.java):
+ * one <script type="module"> becomes the module, every <style> becomes css, the
+ * rest stays html. A script ends at the first </script and a style at the first
+ * </style, as in HTML. Returns { module, moduleStart, html, css, errors }.
+ */
+export function splitHtml(html, what) {
+  const scriptErrors = [];
+  const handlerErrors = [];
+  let module = null;
+  let moduleStart = -1;
+  const css = [];
+  let rest = '';
+  let i = 0;
+  while (i < html.length) {
+    const lt = html.indexOf('<', i);
+    if (lt < 0) { rest += html.slice(i); break; }
+    rest += html.slice(i, lt);
+    if (html.startsWith('<!--', lt)) {
+      const end = html.indexOf('-->', lt + 4);
+      const stop = end < 0 ? html.length : end + 3;
+      rest += html.slice(lt, stop);
+      i = stop;
+      continue;
+    }
+    const gt = html.indexOf('>', lt);
+    if (gt < 0) { rest += html.slice(lt); break; }
+    const startTag = html.slice(lt, gt + 1);
+    const handler = /[a-z]/i.test(html[lt + 1] ?? '') && HANDLER.exec(startTag);
+    if (handler) handlerErrors.push(`${what} uses the inline handler ${handler[1]}=; Jenkins's CSP blocks it, attach the handler in the module`);
+    const tag = START_TAG.exec(html.slice(lt, lt + 8));
+    if (!tag) { rest += startTag; i = gt + 1; continue; }
+    const name = tag[1].toLowerCase();
+    const closeRe = new RegExp(`</${name}`, 'ig');
+    closeRe.lastIndex = gt + 1;
+    const close = closeRe.exec(html)?.index ?? -1;
+    if (close < 0) { scriptErrors.push(`${what} has a <${name}> without </${name}>`); break; }
+    const content = html.slice(gt + 1, close);
+    const closeEnd = html.indexOf('>', close);
+    i = closeEnd < 0 ? html.length : closeEnd + 1;
+    if (name === 'style') { css.push(content); continue; }
+    const attributes = startTag.slice('<script'.length, -1);
+    if (SRC.test(attributes)) {
+      scriptErrors.push(`${what} has a <script src=...>; a form loads no other code, put the code in the module script`);
+    } else if (!MODULE_TYPE.test(attributes)) {
+      scriptErrors.push(`${what} has a <script> without type="module"; Jenkins's CSP blocks inline scripts,`
+        + ' so write the form\'s code as one <script type="module"> that exports default function mount');
+    } else if (module !== null) {
+      scriptErrors.push(`${what} has more than one <script type="module">; a form has one module`);
+    } else {
+      module = content;
+      moduleStart = gt + 1;
+    }
+  }
+  const blank = (s) => s === null || s.trim() === '';
+  return {
+    module: blank(module) ? null : module,
+    moduleStart,
+    html: blank(rest) ? null : rest,
+    css: css.length && !blank(css.join('\n')) ? css.join('\n') : null,
+    errors: [...scriptErrors, ...handlerErrors],
+  };
+}
+
+// Mirrors FormFrom.java.
+const FORM_FROM_MAX_CHARS = 200;
+const FORM_FROM_MAX_CODE_BYTES = 512 * 1024;
+const FORM_FROM_FIELDS = ['module', 'html', 'css', 'schema', 'defaultJson'];
+
+function formFromPathError(p) {
+  if (p.length > FORM_FROM_MAX_CHARS) return `formFrom is ${p.length} characters; the limit is ${FORM_FROM_MAX_CHARS}`;
+  if (!/^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/.test(p)) {
+    return `formFrom '${p}' must be a folder relative to the repository root: letters, digits, '.', '_' and '-' separated by '/',`
+      + " with no leading or trailing '/' and no '\\'";
+  }
+  const dots = p.split('/').find((s) => s === '.' || s === '..');
+  return dots ? `formFrom '${p}' must not contain '${dots}'` : null;
+}
+
+/** Checks a formFrom folder on disk like inline fields; problems carry the file name. */
+async function checkFolder(root, rel, runtime, report) {
+  const dir = path.join(root, rel);
+  let isDir = false;
+  try { isDir = statSync(dir).isDirectory(); } catch { /* missing */ }
+  if (!isDir) {
+    report('warning', `formFrom folder '${rel}' is not under ${root}, so its files were not checked; Jenkins reads it from the branch head`);
+    return;
+  }
+  const at = (file) => (level, message) => report(level, `${rel}/${file}: ${message}`);
+  const read = (file, limit) => {
+    let text;
+    try { text = readFileSync(path.join(dir, file), 'utf8'); } catch (e) {
+      if (e.code === 'ENOENT') return null;
+      throw e;
+    }
+    if (Buffer.byteLength(text) > limit) {
+      at(file)('error', `larger than ${limit / 1024} KiB; the controller refuses it`);
+      return null;
+    }
+    return text.trim() === '' ? null : text;
+  };
+  const mjs = read('form.mjs', FORM_FROM_MAX_CODE_BYTES);
+  const html = read('form.html', FORM_FROM_MAX_CODE_BYTES);
+  read('form.css', FORM_FROM_MAX_CODE_BYTES);
+  const schemaText = read('schema.json', JSON_MAX_CHARS);
+  const defaultText = read('default.json', JSON_MAX_CHARS);
+
+  let htmlModule = null;
+  if (html !== null) {
+    const parts = splitHtml(html, 'form.html');
+    for (const message of parts.errors) report('error', `${rel}/${message}`);
+    if (parts.module !== null && mjs !== null) {
+      report('error', `${rel}/form.html has a <script type="module"> and the form has form.mjs too; keep one of them`);
+    }
+    if (parts.module !== null) htmlModule = { text: parts.module, line: lineOf(html, parts.moduleStart) };
+  }
+  const moduleFile = mjs !== null ? { file: 'form.mjs', text: mjs, line: 1 } : htmlModule && { file: 'form.html', ...htmlModule };
+  if (moduleFile) {
+    await checkModule(moduleFile.text, at(moduleFile.file), (level, line, column, message) =>
+      report(level, `${rel}/${moduleFile.file}:${moduleFile.line + line - 1}:${column}: ${message}`));
+  } else if (runtime !== 'schema-form') {
+    report('error', `${rel} has no form.mjs and no <script type="module"> in form.html; a form needs a module unless runtime is 'schema-form'`);
+  }
+  let schema;
+  if (schemaText !== null) {
+    schema = parseJson('schema.json', schemaText, at('schema.json'));
+    if (schema !== undefined) checkSchema(schema, '', at('schema.json'));
+  }
+  if (defaultText !== null) parseJson('default.json', defaultText, at('default.json'));
+  if (runtime === 'schema-form' && schema?.type !== 'object') {
+    report('error', `runtime 'schema-form' needs ${rel}/schema.json with "type": "object"`);
+  }
+}
+
 const NO_CALLS = 'no uiParameter or uiPanel call found';
 
-/** Checks one Jenkinsfile's text; returns [{ level, line, column, message }]. */
-export async function checkSource(src) {
+/**
+ * Checks one Jenkinsfile's text; returns [{ level, line, column, message }].
+ * With `root` (the repository root on disk), a formFrom folder found under it
+ * is checked like inline fields.
+ */
+export async function checkSource(src, { root } = {}) {
   const problems = [];
   const tokens = tokenize(src);
   // Groovy refuses to compile the whole file over one of these, wherever it is.
@@ -363,15 +507,42 @@ export async function checkSource(src) {
       if (token) parseJson(key, token.value, (level, message) => report(level, message, token.start));
     }
     const htmlToken = field('html');
-    if (htmlToken) checkHtml(htmlToken.value, (level, message) => report(level, message, htmlToken.start));
+    let htmlModule = null;
+    if (htmlToken && call.name === 'uiParameter') {
+      // A single-file form: the controller splits the module and styles out of html.
+      const parts = splitHtml(htmlToken.value, 'html');
+      for (const message of parts.errors) report('error', message, htmlToken.start);
+      if (parts.module !== null) {
+        htmlModule = { text: parts.module, base: lineOf(src, htmlToken.contentStart) + lineOf(htmlToken.value, parts.moduleStart) - 1 };
+        if ('module' in call.args) report('error', 'html has a <script type="module"> and the form has module too; keep one of them', htmlToken.start);
+      }
+    } else if (htmlToken) {
+      checkHtml(htmlToken.value, (level, message) => report(level, message, htmlToken.start));
+    }
     field('css');
+
+    const formFrom = 'formFrom' in call.args && call.name === 'uiParameter';
+    if (formFrom) {
+      const inline = FORM_FROM_FIELDS.filter((key) => key in call.args);
+      const fromToken = field('formFrom');
+      if (inline.length) {
+        report('error', `formFrom reads module, html, css, schema and defaultJson from '${fromToken?.value ?? 'the folder'}',`
+          + ` so the Jenkinsfile must not set them too; remove ${inline.join(', ')}`, call.args.formFrom.start);
+      }
+      const pathError = fromToken && formFromPathError(fromToken.value);
+      if (pathError) report('error', pathError, fromToken.start);
+      else if (fromToken && root) await checkFolder(root, fromToken.value, runtime, (level, message) => report(level, message, fromToken.start));
+    }
 
     const moduleToken = field('module');
     if (moduleToken) {
       const base = lineOf(src, moduleToken.contentStart);
       await checkModule(moduleToken.value, (level, message) => report(level, message, moduleToken.start),
         (level, line, column, message) => problems.push({ level, line: base + line - 1, column, message: `${label}: ${message}` }));
-    } else if (!('module' in call.args) && runtime !== 'schema-form' && call.name === 'uiParameter') {
+    } else if (htmlModule) {
+      await checkModule(htmlModule.text, (level, message) => report(level, message, htmlToken.start),
+        (level, line, column, message) => problems.push({ level, line: htmlModule.base + line - 1, column, message: `${label}: ${message}` }));
+    } else if (!('module' in call.args) && !formFrom && runtime !== 'schema-form' && call.name === 'uiParameter') {
       report('error', `module is required unless runtime is 'schema-form'`);
     }
     if (runtime === 'schema-form' && call.name === 'uiParameter' && schema !== undefined && schema?.type !== 'object') {
@@ -383,7 +554,7 @@ export async function checkSource(src) {
         report('warning', `sandbox is the string '${sandbox.value}'; write true or false without quotes`, sandbox.start);
       } else if (sandbox.nonLiteral) {
         report('warning', 'sandbox is not a plain true or false, so it was not checked', sandbox.start);
-      } else if (sandbox.value && !['module', 'html', 'css'].some((key) => key in call.args)) {
+      } else if (sandbox.value && !['module', 'html', 'css', 'formFrom'].some((key) => key in call.args)) {
         report('warning', 'sandbox: true has no effect: this form runs no code of its own (no module, html or css)', sandbox.start);
       }
     }
@@ -404,14 +575,18 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   let empty = 0; // a file with no call to check usually means the scan went wrong
   for (const file of files) {
     let src;
+    const full = path.resolve(base, file);
     try {
-      src = readFileSync(path.resolve(base, file), 'utf8');
+      src = readFileSync(full, 'utf8');
     } catch (e) {
       console.error(`${file}: cannot read: ${e.code ?? e.message}`);
       errors++;
       continue;
     }
-    for (const p of await checkSource(src)) {
+    // formFrom paths are relative to the repository root: the Git top level of the file, else its directory.
+    const git = spawnSync('git', ['-C', path.dirname(full), 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
+    const root = git.status === 0 ? git.stdout.trim() : path.dirname(full);
+    for (const p of await checkSource(src, { root })) {
       if (p.level === 'error') errors++;
       if (p.message === NO_CALLS) empty++;
       console.log(`${file}:${p.line}:${p.column}: ${p.level}: ${p.message}`);

@@ -1,0 +1,27 @@
+<style>
+  .row { display: flex; gap: 0.5rem; align-items: center; margin: 0.25rem 0; }
+</style>
+<p class="title"><strong>Deploy</strong></p>
+<div class="app"></div>
+<script type="module">
+export default function mount({ root, ui, runtime: { html, render, useState } }) {
+  function App() {
+    const [v, setV] = useState(ui.value)
+    const set = (next) => { setV(next); ui.setValue(next) }
+    return html`
+      <label class="row">Environment
+        <select name="env" value=${v.env} onChange=${(e) => set({ ...v, env: e.currentTarget.value })}>
+          ${['dev', 'staging', 'prod'].map((env) => html`<option value=${env}>${env}</option>`)}
+        </select>
+      </label>
+      <label class="row">
+        <input type="checkbox" name="dryRun" checked=${v.dryRun} onChange=${(e) => set({ ...v, dryRun: e.currentTarget.checked })} />
+        Dry run
+      </label>
+      <p class="summary">${v.dryRun ? 'Dry run for' : 'Deploy to'} ${v.env}</p>`
+  }
+  const app = root.querySelector('.app')
+  render(html`<${App} />`, app)
+  return () => render(null, app)
+}
+</script>
