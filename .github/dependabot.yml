@@ -1,0 +1,54 @@
+version: 2
+
+# Every cooldown for minor and patch updates is 7 days because js/'s pnpm
+# policy (minimumReleaseAge: 10080 minutes) refuses younger versions; a
+# shorter patch cooldown would fail its own install. Majors wait 30 days.
+# Minor and patch updates are grouped into one PR per ecosystem; majors
+# come one by one so they get review.
+
+updates:
+  # The plugin: parent POM, BOM, plugins.
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+
+  # Browser runtimes, checker, preview and tests.
+  - package-ecosystem: npm
+    directory: /js
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 7
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(ci)
+    cooldown:
+      default-days: 7
