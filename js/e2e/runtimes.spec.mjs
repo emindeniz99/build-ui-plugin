@@ -156,8 +156,13 @@ test('with CSP in report-only mode, vue3 and alpine3 forms work', async ({ page,
   await page.locator('input[name="alp-branch"]').fill('alp/y');
   await expect(page.locator('.build-ui-root[data-name="ALP"] output')).toHaveText('ALP/Y');
   expect(await submit(page, request, 'eval-report-only')).toContain('VUE={"branch":"vue/x"} ALP={"branch":"alp/y"}');
-  // Report-only mode still reports each eval; nothing else may go wrong.
-  expect(problems.filter((p) => p !== 'CSP script-src eval'), problems.join('\n')).toEqual([]);
+  // Report-only mode still reports each eval; nothing else may go wrong. Firefox also logs
+  // each reported eval as a console error of its own. WebKit logs, once per document, that
+  // Jenkins's frame-ancestors directive does nothing in a report-only header.
+  const reportedEval = (p) => p === 'CSP script-src eval'
+    || /^\[JavaScript Error: "Content-Security-Policy: \(Report-Only policy\) The page’s settings would block a JavaScript eval \(script-src\)/.test(p);
+  const webkitFrameAncestors = "The Content Security Policy directive 'frame-ancestors' is ignored when delivered in a report-only policy.";
+  expect(problems.filter((p) => !reportedEval(p) && p !== webkitFrameAncestors), problems.join('\n')).toEqual([]);
   expect(problems).toContain('CSP script-src eval');
 });
 
