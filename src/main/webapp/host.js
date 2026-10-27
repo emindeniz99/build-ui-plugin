@@ -161,14 +161,19 @@ async function mountOne(el) {
 // message carrying a MessagePort, and only that port is listened to afterwards.
 async function mountSandboxed(el, textarea, signal) {
   const { runtime, module, css: cssKey, html: htmlKey } = el.dataset;
-  const [css, html] = await Promise.all([
+  const [css, html, doc] = await Promise.all([
     cssKey ? fetchText(cssKey, signal) : null,
     htmlKey ? fetchText(htmlKey, signal) : null,
+    fetchText(`frame?runtime=${encodeURIComponent(runtime)}${module ? `&module=${encodeURIComponent(module)}` : ''}`, signal),
   ]);
   const frame = document.createElement('iframe');
   frame.setAttribute('sandbox', 'allow-scripts');
   frame.title = el.dataset.name;
-  frame.src = `${contentURL}frame?runtime=${encodeURIComponent(runtime)}${module ? `&module=${encodeURIComponent(module)}` : ''}`;
+  // srcdoc, not src: the frame then inherits this page's CSP, where 'self' means
+  // Jenkins in every engine. WebKit 26 reads 'self' in a sandboxed document's own
+  // policy as its opaque origin, so a frame loaded from the endpoint ran no script.
+  // (docs/design.md section 13)
+  frame.srcdoc = doc;
   const { port1: port, port2 } = new MessageChannel();
   signal.addEventListener('abort', () => { port.postMessage({ type: 'unmount' }); port.close(); });
   await new Promise((resolve, reject) => {

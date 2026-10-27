@@ -18,7 +18,8 @@ import org.kohsuke.stapler.StaplerResponse2;
  * {@code /build-ui/<sha256>.<ext>} serves form content that a parameter
  * definition registered in {@link ContentStore}; {@code /build-ui/query/<id>}
  * runs a {@link DataProvider} as the calling user; {@code /build-ui/frame}
- * renders the document of a sandboxed form's iframe. All need Overall/Read,
+ * renders the document that {@code host.js} puts in a sandboxed form's
+ * iframe as {@code srcdoc}. All need Overall/Read,
  * which Jenkins checks for every {@link RootAction}.
  */
 @Extension
@@ -68,8 +69,9 @@ public class BuildUiAction implements RootAction {
     /**
      * The iframe document of a sandboxed form: no code of its own, only the
      * boot script and, in an attribute, a one-time URL of the form's module.
-     * The browser sends the viewer's cookies with this request, so this is
-     * where the permission check happens; the frame's own requests carry none.
+     * {@code host.js} fetches it with the viewer's session, so this is where
+     * the permission check happens, and sets it as the frame's {@code srcdoc}.
+     * The frame's own requests come from an opaque origin.
      */
     private static void frame(StaplerRequest2 req, StaplerResponse2 rsp) throws IOException {
         String runtime = req.getParameter("runtime");

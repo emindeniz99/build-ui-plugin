@@ -31,17 +31,17 @@ test('a sandboxed form runs in an opaque-origin frame under Jenkins CSP and its 
   await build(request, 'sandbox-reference');
   const problems = await watch(page);
 
-  const frameResponse = page.waitForResponse((r) => r.url().includes('/build-ui/frame'));
-  await page.goto('job/sandbox-reference/build?delay=0sec');
-  const csp = (await frameResponse).headers()['content-security-policy'];
-  expect(csp, 'Jenkins must enforce its CSP inside the frame too').toContain("script-src 'report-sample' 'self'");
+  const res = await page.goto('job/sandbox-reference/build?delay=0sec');
+  // The frame's document is srcdoc, so it inherits this page's policy.
+  const csp = res.headers()['content-security-policy'];
+  expect(csp, 'Jenkins must enforce its CSP on the page the frame inherits it from').toContain("script-src 'report-sample' 'self'");
   expect(csp).not.toContain('unsafe-eval');
 
   const iframe = page.locator('.build-ui-root iframe');
   await expect(page.locator('.build-ui-root[data-mounted="true"]')).toBeVisible();
   expect(await iframe.getAttribute('sandbox'), 'allow-same-origin would give the frame the page\'s origin back').toBe('allow-scripts');
   expect(await iframe.getAttribute('title')).toBe('BUILD_CONFIG');
-  const frame = page.frames().find((f) => f.url().includes('/build-ui/frame'));
+  const frame = await (await iframe.elementHandle()).contentFrame();
   expect(await frame.evaluate(() => self.origin)).toBe('null');
   await expect(page.locator('textarea.build-ui-value')).toBeHidden();
 
@@ -60,7 +60,7 @@ test('a sandboxed form runs in an opaque-origin frame under Jenkins CSP and its 
   expect(problems, problems.join('\n')).toEqual([]);
 });
 
-test('a hostile sandboxed module cannot read the page or cookies, call the Jenkins API or navigate the page', async ({ page, request }) => {
+test('a hostile sandboxed module cannot read the page or cookies, call the Jenkins API or navigate the page', async ({ page, request, baseURL, browserName }) => {
   await pipelineJob(request, 'sandbox-hostile', plainForms(['CFG', `
 export default async function mount({ root, ui }) {
   const report = {}
@@ -68,24 +68,36 @@ export default async function mount({ root, ui }) {
     try { await fn(); report[name] = "succeeded" } catch (e) { report[name] = "failed: " + e.name }
   }
   await attempt("parentDom", () => parent.document.body.innerHTML)
-  await attempt("cookie", () => document.cookie)
-  await attempt("api", async () => { const r = await fetch(new URL("../api/json", location.href)); await r.text() })
-  await attempt("top", () => { top.location.href = new URL("../", location.href).href })
+  try { report.cookie = "read " + JSON.stringify(document.cookie) } catch (e) { report.cookie = "failed: " + e.name }
+  // The module's URL is <jenkins>/build-ui-sandbox/module/<token>.mjs.
+  const jenkins = new URL("../../", import.meta.url).href
+  await attempt("api", async () => { const r = await fetch(jenkins + "api/json"); await r.text() })
+  await attempt("top", () => { top.location.href = jenkins })
+  // Jenkins's CSP holds inside the frame: an inline script does not run.
+  const inline = document.createElement("script")
+  inline.textContent = "window.inlineRan = true"
+  document.head.append(inline)
+  report.inlineScript = window.inlineRan === true ? "ran" : "blocked"
   ui.setValue(report)
   // The host listens only to its MessagePort, so a message to the page window must change nothing.
   parent.postMessage({ type: "setValue", json: JSON.stringify({ forged: true }) }, "*")
   setTimeout(() => { root.textContent = "done" }, 300)
 }`]));
   await build(request, 'sandbox-hostile');
+  // A cookie page scripts may read, so an empty answer in the frame means it has no access.
+  await page.context().addCookies([{ name: 'buildui-visible', value: '1', domain: new URL(baseURL).hostname, path: '/' }]);
   await page.goto('job/sandbox-hostile/build?delay=0sec');
+  expect(await page.evaluate(() => document.cookie)).toContain('buildui-visible=1');
   await expect(frameOf(page).locator('body')).toContainText('done');
 
   const report = JSON.parse(await page.locator('textarea.build-ui-value').inputValue());
   expect(report).toEqual({
     parentDom: 'failed: SecurityError',
-    cookie: 'failed: SecurityError',
+    // Chromium and Firefox throw; WebKit answers an empty string to a sandboxed srcdoc frame.
+    cookie: browserName === 'webkit' ? 'read ""' : 'failed: SecurityError',
     api: 'failed: TypeError', // CORS: Jenkins sends no Access-Control-Allow-Origin, and the request had no cookies
     top: 'failed: SecurityError',
+    inlineScript: 'blocked',
   });
   expect(page.url()).toContain('job/sandbox-hostile/build');
 });
@@ -149,7 +161,7 @@ export default async function mount({ root, ui }) {
   expect(before).toBeGreaterThan(30);
   await f.getByRole('button', { name: 'Grow' }).click();
   await expect.poll(async () => (await iframe.boundingBox()).height).toBeGreaterThanOrEqual(before + 600);
-  const frame = page.frames().find((fr) => fr.url().includes('/build-ui/frame'));
+  const frame = await (await iframe.elementHandle()).contentFrame();
   expect(await frame.evaluate(() => document.documentElement.scrollHeight <= innerHeight), 'no scrollbar inside the frame').toBe(true);
   // The unknown provider answers 404, which Chromium logs; nothing else may.
   expect(problems.filter((p) => !p.includes('404')), problems.join('\n')).toEqual([]);
