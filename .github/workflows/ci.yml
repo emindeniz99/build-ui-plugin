@@ -73,7 +73,9 @@ jobs:
   e2e:
     name: browser (Jenkins ${{ matrix.line }}, ${{ matrix.browsers }})
     needs: [plugin, runtimes]
-    runs-on: ubuntu-latest
+    # Playwright 1.56.1 has no browser builds for Ubuntu 26.04, which
+    # ubuntu-latest ran on 2026-10-27. Move with the Playwright version.
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -122,4 +124,4 @@ jobs:
       - run: pnpm --dir js e2e
       - name: Jenkins log
         if: failure()
-        run: tail -200 hpi-run.log
+        run: test -f hpi-run.log && tail -200 hpi-run.log || echo "Jenkins did not start; no hpi-run.log"
