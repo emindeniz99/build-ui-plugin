@@ -21,11 +21,12 @@ import java.util.logging.Logger;
 
 /**
  * Checks the {@code x-git-ref} values of every queued build before it starts,
- * whatever queued it (a {@code build} step, a timer, a script). Listing refs
- * contacts the Git server and can take minutes, while Jenkins asks queue
- * extensions with the lock for the whole queue held. So the item waits,
- * blocked, while a pool thread lists the refs; a ref that does not exist, or
- * refs that cannot be listed, cancel the item before it starts.
+ * whatever queued it (a {@code build} step, a timer, a script), and the values
+ * of formFrom parameters against the folder's {@code schema.json}. Listing refs
+ * and reading the folder contact the repository and can take minutes, while
+ * Jenkins asks queue extensions with the lock for the whole queue held. So the
+ * item waits, blocked, while a pool thread does it; a value that fails, or a
+ * repository that cannot be read, cancels the item before it starts.
  */
 @Extension
 public class RefGuard extends QueueTaskDispatcher {
@@ -38,7 +39,7 @@ public class RefGuard extends QueueTaskDispatcher {
     private static final CauseOfBlockage CHECKING = new CauseOfBlockage() {
         @Override
         public String getShortDescription() {
-            return "Checking that the Git branches and tags in its parameters exist";
+            return "Checking its parameters against the job's repository";
         }
     };
 
@@ -70,7 +71,7 @@ public class RefGuard extends QueueTaskDispatcher {
         Map<UiParameterDefinition, String> values = new LinkedHashMap<>();
         for (ParametersAction parameters : item.getActions(ParametersAction.class)) {
             for (ParameterValue value : parameters.getAllParameters()) {
-                if (property.getParameterDefinition(value.getName()) instanceof UiParameterDefinition ui && ui.hasRefChecks()
+                if (property.getParameterDefinition(value.getName()) instanceof UiParameterDefinition ui && ui.needsQueueCheck()
                         && value instanceof StringParameterValue s && s.getValue() != null) {
                     values.put(ui, s.getValue());
                 }
@@ -83,9 +84,9 @@ public class RefGuard extends QueueTaskDispatcher {
     private static List<String> check(long id, Job<?, ?> job, Map<UiParameterDefinition, String> values) {
         List<String> errors = new ArrayList<>();
         try {
-            values.forEach((ui, json) -> ui.refErrorsFor(json, job).forEach(e -> errors.add(ui.getName() + ": " + e)));
+            values.forEach((ui, json) -> ui.queueErrorsFor(json, job).forEach(e -> errors.add(ui.getName() + ": " + e)));
         } catch (RuntimeException e) {
-            errors.add("could not check Git refs (" + e.getMessage() + ")");
+            errors.add("could not check against the repository (" + e.getMessage() + ")");
         }
         if (!errors.isEmpty()) {
             LOGGER.warning(() -> "Cancelling a queued build of " + job.getFullName() + ": " + String.join("; ", errors));

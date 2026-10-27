@@ -4,18 +4,25 @@
   what the form submits; host.js hides it once the job's module has mounted and
   shows it again, with the error, if mounting fails. Form code that still waits
   for approval, or whose runtime needs eval that an administrator has not
-  allowed, is never sent: the page shows the textarea and a notice.
+  allowed, is never sent: the page shows the textarea and a notice. So is a
+  form that cannot be read (formFrom), with the reason.
 -->
 <j:jelly xmlns:j="jelly:core" xmlns:f="/lib/form">
   <f:entry title="${it.name}" description="${it.formattedDescription}">
     <div name="parameter" class="build-ui">
       <input type="hidden" name="name" value="${it.name}"/>
-      <!-- "and" stops early, so blocked code is never offered for approval. -->
+      <!-- "and" stops early, so blocked or unreadable code is never offered for approval. -->
       <j:set var="allowed" value="${it.runtimeAllowed}"/>
-      <j:set var="approved" value="${allowed and it.approved}"/>
+      <j:if test="${allowed}">
+        <j:set var="formError" value="${it.formError}"/>
+      </j:if>
+      <j:set var="approved" value="${allowed and formError == null and it.approved}"/>
       <j:choose>
         <j:when test="${!allowed}">
           <p class="build-ui-pending">${%The runtime of this form needs eval, which an administrator has not allowed under Manage Jenkins » System » Build UI. Enter the value as JSON.} <code>runtime: ${it.runtime}</code></p>
+        </j:when>
+        <j:when test="${formError != null}">
+          <p class="build-ui-pending build-ui-form-error">${%This form could not be read, so enter the value as JSON.} ${formError}</p>
         </j:when>
         <j:when test="${approved}">
           <div class="build-ui-root"
@@ -26,7 +33,7 @@
                data-module="${it.moduleKey}"
                data-css="${it.cssKey}"
                data-html="${it.htmlKey}"
-               data-schema="${it.schema}"
+               data-schema="${it.formSchema}"
                data-sandbox="${it.sandboxed}"/>
         </j:when>
         <j:otherwise>
