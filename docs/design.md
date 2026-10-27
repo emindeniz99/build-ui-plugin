@@ -339,9 +339,9 @@ when a real form needs fine-grained updates that Preact cannot keep fast.
 
 ## 8. Assumptions
 
-- Safari behaves as Playwright's WebKit 26.0 build does. The browser suite
-  passes in Chromium, Firefox and that build (sections 12 and 13 list where
-  the engines differ).
+- Safari behaves as Playwright's WebKit builds do. The browser suite passes
+  in Chromium, Firefox and WebKit 26.0 (Playwright 1.56.1) and 27.2
+  (Playwright 1.64.1); sections 12 and 13 list where the engines differ.
 - In a multibranch job, a branch's Jenkinsfile writes its parameter
   definitions into that branch job (section 3).
 
@@ -374,16 +374,16 @@ JenkinsRule tests, 8 browser tests).
   script-security approves everything, so `FormApprovalTest` covers approval
   through JenkinsRule pages instead.
 - A release: the workflow and `CHANGELOG.md` exist, and a local rehearsal of
-  its steps built `build-ui.hpi` 0.1.0. No tag exists yet; README » Release
-  lists the steps before the first one.
-- Firefox and WebKit on the minimum line: CI runs them on 2.580.1 only,
-  and this container has only Chromium.
+  its steps built `build-ui.hpi` 0.1.0. `CI` and `security` pass on `main`;
+  the `release` workflow runs only for a tag, and no tag exists yet. README »
+  Release lists the steps before the first one.
+- Firefox and WebKit on the minimum line: CI runs them on 2.580.1 only.
 - Safari and mobile browsers: not tested.
 - `formFrom` with an SCM other than Git, or with a remote that needs
   credentials: the tests use local Git repositories without credentials
   (on 2.541.1 and 2.580.1; section 14).
-- The Git Parameter comparison and the integration tests on 2.580.1, and
-  over HTTP or SSH remotes: they ran on 2.541.1 with `file:` repositories
+- The Git Parameter comparison and the integration tests over HTTP or SSH
+  remotes: CI runs them on 2.541.1 and 2.580.1, with `file:` repositories
   only (section 16).
 - `uiPanel` keeps its old `html` rule: a `<script>` there is a checker error,
   and the controller does not split a panel's `html`.
@@ -623,6 +623,14 @@ in `script-src` instead of `'self'`, and the same markup as `srcdoc`.
   40517301536): the frame loaded with an empty body and never answered the
   host. With `srcdoc`, all ten pass in all three engines (CI run
   40551802902: 135 browser tests passed on 2.580.1, 45 on 2.541.1).
+- With Playwright 1.64.1 (Chromium 156.0.8078.4, Firefox 157.0, WebKit 27.2;
+  CI run 40560018819, probe output compared line by line with run
+  40555513993), WebKit 27.2 runs scripts in the frame with its own document
+  too, so it no longer matches `'self'` against the opaque origin, and it
+  loads the same-origin image in the frame that names the origin, which
+  26.0 refused. The results in the bullets above did not change, WebKit's
+  cookies on requests made without CORS included. The plugin keeps
+  `srcdoc`, which works in both WebKit builds.
 
 ### Limits
 
@@ -644,8 +652,10 @@ in `script-src` instead of `'self'`, and the same markup as `srcdoc`.
 ## 14. Forms from the repository and single-file forms (Tested)
 
 `FormFromTest` (JenkinsRule, 16 tests), `SingleFileHtmlTest` (15 plain unit
-tests), eleven checker tests and `js/e2e/form-from.spec.mjs` (Chromium) cover
-this section, all on Jenkins 2.541.1 with local Git repositories.
+tests), eleven checker tests and `js/e2e/form-from.spec.mjs` cover this
+section, with local Git repositories. The measurements below were taken on
+Jenkins 2.541.1; CI runs the tests on 2.541.1 and 2.580.1, and the browser
+test in Chromium, Firefox and WebKit on 2.580.1.
 
 The problem, in the owner's words: "I changed the HTML in the Jenkinsfile
 and pushed to git. The UI does not come up with the new version right
@@ -866,8 +876,9 @@ and `js/test/typecheck.test.mjs` (4 Node tests) cover this section.
 ## 16. gitRefs, Git Parameter parity and other plugins (Tested)
 
 `GitRefsProviderTest` (21 tests), `GitParameterParityTest` (5) and
-`IntegrationTest` (4), JenkinsRule on Jenkins 2.541.1 with local Git
-repositories, cover this section.
+`IntegrationTest` (4), JenkinsRule with local Git repositories, cover this
+section. The measurements below were taken on Jenkins 2.541.1; CI runs the
+tests on 2.541.1 and 2.580.1.
 
 The RFC lists what Git Parameter does that `gitRefs` must match before it
 can replace it: tagFilter, DESCENDING_SMART, repository matching,

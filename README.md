@@ -40,8 +40,9 @@ form is [`examples/reference.Jenkinsfile`](./examples/reference.Jenkinsfile)
 [`docs/design.md`](./docs/design.md).
 
 Browser support: the 45 browser tests pass in CI in Chromium on 2.541.1 and
-in Chromium, Firefox and WebKit on 2.580.1, with Playwright 1.56.1's builds
-(Chromium 141, Firefox 142, WebKit 26.0). Nobody has tested Safari itself or
+in Chromium, Firefox and WebKit on 2.580.1. CI uses Playwright 1.64.1's
+builds (Chromium 156, Firefox 157, WebKit 27.2); they passed with 1.56.1's
+builds (Chromium 141, Firefox 142, WebKit 26.0) too. Nobody has tested Safari itself or
 a mobile browser. Two engine differences matter to users: WebKit reports
 nothing in [report-only mode](#runtimes-that-need-eval-off-by-default), and
 a [sandboxed form](#sandboxed-forms-optional) in WebKit sends your cookies
@@ -316,7 +317,7 @@ day an admin enforces CSP. That is why they are off by default.
   the JSON field. The runtime file is not loaded.
 - With the setting on and CSP in report-only mode, the form works.
   Chromium and Firefox report each eval to Jenkins as a CSP violation.
-  WebKit 26.0 reports none, so the reports Jenkins collects miss every
+  WebKit (26.0 and 27.2) reports none, so the reports Jenkins collects miss every
   Safari user of these forms.
 - The plugin never adds `unsafe-eval` to Jenkins's policy.
 - Approval of form code applies to these runtimes as to the others. A form
@@ -557,7 +558,7 @@ What the sandbox does not stop:
   send no cookies with them. Jenkins core needs a POST with a crumb to
   change anything, and the frame cannot read a crumb; a plugin with a GET
   endpoint that changes state would be exposed.
-- WebKit was tested as Playwright's WebKit 26.0 build, not as Safari.
+- WebKit was tested as Playwright's WebKit 26.0 and 27.2 builds, not as Safari.
 
 With [approval](#approval-of-form-code-optional) on, a sandboxed form still
 waits for an admin. Code approved for the page may also run in the sandbox;
@@ -757,20 +758,23 @@ tests, and attaches `build-ui.hpi` and its SHA-256 to a GitHub Release with
 `CHANGELOG.md` as the notes. Update `CHANGELOG.md` first. The tag prefix
 lives in `.github/workflows/release.yml`.
 
-No release has been cut yet (2026-10-27), and the three workflows have never
-run on GitHub. Before the first tag:
+No release has been cut yet (2026-10-27). `CI` and `security` run on every
+push to `main` and pass there. On commit 355ddaf, CI run 40563677204 passed
+every job: the plugin on 2.541.1 and 2.580.1, the runtime bundles, and the
+browser tests in Chromium on 2.541.1 and in Chromium, Firefox and WebKit on
+2.580.1. The three-engine browser job passed on its second attempt; the first
+stopped at the 10-minute limit of `playwright install` while the runner's
+apt mirror was slow. Security run 40563677210 passed both of its jobs. `release` runs
+only for a tag, so it has not run yet. Before the first tag:
 
-1. Check that Actions is enabled and the repository's default workflow token
-   is read-only.
-2. Let `CI` and `security` pass on `main`, Firefox and
-   WebKit included.
+1. Check that the repository's default workflow token is read-only.
+2. Check that the latest `CI` and `security` runs on `main` passed.
 3. Push the `v0.1.0` tag and check that the Release carries `build-ui.hpi` and
    its checksum.
 
-`security` lints the workflows with zizmor and scans the repository's
-history for secrets with gitleaks. Both pass locally: zizmor 1.31.1 found
-nothing in the three workflows, and gitleaks v8.30.1 found no leaks in the
-91 commits of this repository or in its files (2026-10-27).
+`security` lints the workflows with zizmor 1.31.1 and scans the repository's
+history for secrets with gitleaks v8.30.1. Neither found anything in run
+40563677210.
 
 ## Notes / learnings
 
