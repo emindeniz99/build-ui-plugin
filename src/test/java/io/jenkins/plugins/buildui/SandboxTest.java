@@ -158,8 +158,13 @@ class SandboxTest {
         job("boxed", sandboxed(MODULE));
         page("job/boxed/build?delay=0sec");
         assertEquals(404, aliceGet("build-ui/frame?runtime=preact11-htm3&module=" + "0".repeat(64) + ".mjs").getWebResponse().getStatusCode());
-        assertEquals(404, aliceGet("build-ui/frame?runtime=vue3&module=" + key(MODULE)).getWebResponse().getStatusCode());
+        assertEquals(404, aliceGet("build-ui/frame?runtime=solid2-html&module=" + key(MODULE)).getWebResponse().getStatusCode());
         assertEquals(404, aliceGet("build-ui/frame?module=" + key(MODULE)).getWebResponse().getStatusCode());
+        // An eval runtime only where an admin allows it, even through a hand-made frame URL.
+        assertEquals(404, aliceGet("build-ui/frame?runtime=vue3&module=" + key(MODULE)).getWebResponse().getStatusCode());
+        BuildUiConfiguration.get().setAllowEvalRuntimes(true);
+        assertEquals(200, aliceGet("build-ui/frame?runtime=vue3&module=" + key(MODULE)).getWebResponse().getStatusCode());
+        BuildUiConfiguration.get().setAllowEvalRuntimes(false);
         // A key that is not a module (CSS, HTML) cannot become a script.
         String css = ContentStore.put("p { color: red }", "css", "text/css;charset=UTF-8");
         assertEquals(404, aliceGet("build-ui/frame?runtime=none&module=" + css).getWebResponse().getStatusCode());

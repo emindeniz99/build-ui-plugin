@@ -74,7 +74,8 @@ public class BuildUiAction implements RootAction {
     private static void frame(StaplerRequest2 req, StaplerResponse2 rsp) throws IOException {
         String runtime = req.getParameter("runtime");
         String module = req.getParameter("module");
-        if (runtime == null || !Runtimes.ALL.contains(runtime)
+        // The view never offers an eval runtime an admin has not allowed; a hand-made URL must not either.
+        if (runtime == null || !Runtimes.ALL.contains(runtime) || !Runtimes.allowed(runtime)
                 || (module != null && (!MODULE_KEY.matcher(module).matches() || ContentStore.get(module) == null))) {
             rsp.sendError(HttpServletResponse.SC_NOT_FOUND);
             return;
