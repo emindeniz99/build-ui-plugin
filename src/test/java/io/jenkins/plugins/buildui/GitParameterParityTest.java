@@ -27,7 +27,8 @@ import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 /**
- * Issue #94: "do not replace [Git Parameter] until parity is demonstrated".
+ * The original design request (the RFC in docs/design.md): "do not replace
+ * [Git Parameter] until parity is demonstrated".
  * Each test sets up Git Parameter and gitRefs with equivalent settings on one
  * job and compares what each offers, entry by entry and in order. Where they
  * differ on purpose the test asserts the difference, so a change on either

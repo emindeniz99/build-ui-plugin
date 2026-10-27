@@ -6,7 +6,7 @@
 //   /** @type {import('<path to>/build-ui').MountFor<'preact11-htm3'>} */
 //   export default function mount({ root, ui, runtime }) { ... }
 //
-//   pnpm --dir projects/jenkins-ui/js typecheck path/to/form.mjs [more files]
+//   pnpm --dir js typecheck path/to/form.mjs [more files]
 //
 // It checks .js and .mjs files only; a module inside a Jenkinsfile or a
 // form.html has no file of its own for the compiler to read.

@@ -1,4 +1,6 @@
-# Supply-chain policy from projects/stack/docs/security.md.
+# Supply-chain policy: install no version published less than 7 days ago
+# (10080 minutes), refuse a version whose publish time is unknown, and refuse
+# one published with weaker trust evidence than its predecessors.
 minimumReleaseAge: 10080
 minimumReleaseAgeIgnoreMissingTime: false
 trustPolicy: no-downgrade

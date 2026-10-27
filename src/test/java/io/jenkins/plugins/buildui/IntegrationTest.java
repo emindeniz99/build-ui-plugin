@@ -41,8 +41,9 @@ import org.jvnet.hudson.test.MockAuthorizationStrategy;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 /**
- * Issue #94 section 11: build-ui has to live next to the parameter plugins
- * people already use, and keep working when a job is renamed or moved.
+ * From the original design request (the RFC in docs/design.md): build-ui has
+ * to live next to the parameter plugins people already use, and keep working
+ * when a job is renamed or moved.
  */
 @WithJenkins
 class IntegrationTest {
