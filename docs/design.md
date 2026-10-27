@@ -364,7 +364,8 @@ JenkinsRule tests, 8 browser tests).
   script-security approves everything, so `FormApprovalTest` covers approval
   through JenkinsRule pages instead.
 - A release: the workflow and `CHANGELOG.md` exist, and a local rehearsal of
-  its steps built `build-ui.hpi` 0.1.0, but no tag is pushed yet.
+  its steps built `build-ui.hpi` 0.1.0. The first tag comes after
+  graduation (owner, 2026-10-27); README » Release lists the steps.
 - Firefox and WebKit runs: CI runs them on the current LTS line, but this
   container has only Chromium, so no Firefox or WebKit run has happened yet.
 

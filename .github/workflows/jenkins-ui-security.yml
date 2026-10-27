@@ -1,0 +1,52 @@
+name: jenkins-ui security
+
+# Lints the workflows (zizmor) and scans the history for secrets (gitleaks).
+# Graduation lessons 10 and 11: actions pinned by SHA, read-only token, no
+# persisted credentials. zizmor is pinned by wheel hash; gitleaks by Go module
+# version, which sum.golang.org checks. Both were older than 7 days when
+# pinned (zizmor 1.31.1: 2026-10-15, gitleaks v8.30.1: 2026-02-21).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "projects/jenkins-ui/**"
+      - ".github/workflows/jenkins-ui-*.yml"
+  pull_request:
+    paths:
+      - "projects/jenkins-ui/**"
+      - ".github/workflows/jenkins-ui-*.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  zizmor:
+    name: workflow lint (zizmor)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install zizmor 1.31.1
+        run: |
+          echo "zizmor==1.31.1 --hash=sha256:58e878eb2dbd2c6183c105e1ac28c14f7dd1eca44a783f1fe2a69647d012c410" > "$RUNNER_TEMP/zizmor.txt"
+          python3 -m pip install --user --require-hashes --only-binary :all: -r "$RUNNER_TEMP/zizmor.txt"
+      - run: ~/.local/bin/zizmor --offline .github/workflows/jenkins-ui-*.yml
+
+  gitleaks:
+    name: secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # Only this project's history while it lives in the monorepo; after
+      # graduation drop the path list so the whole repository is scanned.
+      - run: >-
+          go run github.com/zricethezav/gitleaks/v8@v8.30.1 git
+          --redact --exit-code 1
+          --log-opts="-- projects/jenkins-ui .github/workflows/jenkins-ui-ci.yml .github/workflows/jenkins-ui-release.yml .github/workflows/jenkins-ui-security.yml"
+          .

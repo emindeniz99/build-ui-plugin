@@ -11,8 +11,8 @@ plus 9 from the plugin parent, 1 skipped): parameter, `input` step, `uiPanel`,
 `schema-form`, `jenkinsRuns`, `gitRefs`, `argoCdApp`, optional approval, optional sandboxed forms, the Jenkinsfile
 checker, accessibility checks, runtimes `alpine3-csp`, and `alpine3`/`vue3`
 behind `allowEvalRuntimes` (2.541.1 only so far: +9 JenkinsRule, +7 browser,
-+1 checker test). Release workflow ready; no tag pushed (owner
-decides). GitHub Actions has run no push-triggered workflow in this repo since
++1 checker test). Release and security workflows ready; the first tag comes after
+graduation (owner, 2026-10-27). GitHub Actions has run no push-triggered workflow in this repo since
 2026-06-25 and the manual jenkins-ui CI run stayed queued, so neither
 workflow has run on GitHub yet. Firefox and WebKit legs exist only in CI,
 never run locally (only Chromium is installed here). Open items:

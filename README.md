@@ -28,8 +28,8 @@ frontend build step.
 
 ## Status
 
-0.1.0 is ready to release (see [`CHANGELOG.md`](./CHANGELOG.md)); no tag is
-pushed yet. Tested on Jenkins 2.541.1 and 2.580.1: 47 JenkinsRule tests, 18
+0.1.0 is ready to release (see [`CHANGELOG.md`](./CHANGELOG.md)). The first
+tag comes after graduation, from the standalone repository. Tested on Jenkins 2.541.1 and 2.580.1: 47 JenkinsRule tests, 18
 plain unit tests, 26 browser tests (Chromium) under enforced CSP and 20
 checker tests. Maven reports 74 Java tests: our 65 plus 9 that the plugin
 parent generates, one of them skipped. CI also
@@ -80,6 +80,22 @@ export default function mount({ root, ui, runtime: { html, render, useState } })
 `params.BUILD_CONFIG` is a JSON string. Parse it with `readJSON text: params.BUILD_CONFIG`
 (Pipeline Utility Steps). As with every declarative parameter, the first run
 registers it; *Build with Parameters* shows the form from the second run on.
+
+### When a changed form shows up
+
+Jenkins keeps a job's parameters, this form included, in the job's
+configuration, and only a build that runs the new Jenkinsfile writes them
+there. After you push a change to the module, HTML, CSS or schema:
+
+- A build has to run the new Jenkinsfile once. That build still asks for and
+  uses the old form; *Build with Parameters* shows the new one afterwards.
+- In a multibranch job with a webhook, the push starts that build, so the
+  form updates without anyone clicking.
+- Without such a trigger, run the job once, for example with its defaults.
+- The browser gets the new code on the next page load. Content URLs carry
+  the SHA-256 of the code, so no cache serves the old version.
+- With approval of form code on, the new version waits for approval and the
+  form shows its JSON field until then.
 
 ### `uiParameter` fields
 
@@ -449,6 +465,25 @@ Push a tag `jenkins-ui-v<major>.<minor>.<patch>` on a commit of `main`. The
 `jenkins-ui release` workflow builds the plugin at that version, runs its
 tests, and attaches `build-ui.hpi` and its SHA-256 to a GitHub Release with
 `CHANGELOG.md` as the notes. Update `CHANGELOG.md` first.
+
+Releases start after graduation (owner, 2026-10-27). In this monorepo the
+workflows are written for the standalone repository and nobody runs them by
+hand. After the split:
+
+1. Push the standalone repository and check that Actions is enabled and the
+   default token is read-only.
+2. Edit the three `jenkins-ui-*.yml` workflows for the new layout: drop the
+   `projects/jenkins-ui` paths, the working directories and the gitleaks
+   path list.
+3. Let `jenkins-ui CI` and `jenkins-ui security` pass on `main`, Firefox and
+   WebKit included. They have never run.
+4. Push the `v0.1.0` tag (the tag prefix changes with the layout) and check
+   that the Release carries `build-ui.hpi` and its checksum.
+
+`jenkins-ui security` lints the workflows with zizmor and scans the
+project's history for secrets with gitleaks. Both pass locally: zizmor 1.31.1
+found nothing in the three workflows, and gitleaks v8.30.1 found no leaks in
+54 commits (2026-10-27).
 
 ## Notes / learnings
 
