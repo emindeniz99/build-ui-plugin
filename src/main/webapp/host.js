@@ -169,10 +169,7 @@ async function mountSandboxed(el, textarea, signal) {
   const frame = document.createElement('iframe');
   frame.setAttribute('sandbox', 'allow-scripts');
   frame.title = el.dataset.name;
-  // srcdoc, not src: the frame then inherits this page's CSP, where 'self' means
-  // Jenkins in every engine. WebKit 26 reads 'self' in a sandboxed document's own
-  // policy as its opaque origin, so a frame loaded from the endpoint ran no script.
-  // (docs/design.md section 13)
+  // srcdoc inherits this page's CSP; under a policy of its own WebKit runs no script here (design.md 13).
   frame.srcdoc = doc;
   const { port1: port, port2 } = new MessageChannel();
   signal.addEventListener('abort', () => { port.postMessage({ type: 'unmount' }); port.close(); });
