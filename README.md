@@ -30,10 +30,11 @@ frontend build step.
 
 0.1.0 is ready to release (see [`CHANGELOG.md`](./CHANGELOG.md)). The first
 tag comes after graduation, from the standalone repository. Every test passed on Jenkins 2.541.1 and 2.580.1 on 2026-10-27.
-The project has 85 JenkinsRule
+The project has 100 JenkinsRule
 tests, 29 plain unit tests, 45 browser tests (Chromium) under enforced CSP,
-42 Node tests of the checker, the preview and the types, and 3 browser tests
-of the preview (counted 2026-10-27). CI also
+43 Node tests of the checker, the preview and the types, and 3 browser tests
+of the preview (counted 2026-10-27). Maven reports 138 Java tests: our 129
+plus 9 that the plugin parent generates, one of them skipped. CI also
 runs the browser tests in Firefox and WebKit on 2.580.1. The reference
 form is [`examples/reference.Jenkinsfile`](./examples/reference.Jenkinsfile)
 (53 lines). Design, measurements and open questions:

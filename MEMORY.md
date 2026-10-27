@@ -6,15 +6,17 @@ significant work; prune past ~100 lines. Details: `.claude/skills/memory/SKILL.m
 ## Now
 
 Feature-complete for 0.1.0. On 2026-10-27 every test passed on 2.541.1 and
-2.580.1 (85 JenkinsRule, 29 plain unit, 45 browser in Chromium, 28 checker;
-Maven counts 123: our 114 plus 9 from the plugin parent, 1 skipped):
+2.580.1 (100 JenkinsRule, 29 plain unit, 45 browser in Chromium, 43 Node,
+3 preview browser; Maven counts 138: our 129 plus 9 from the plugin parent,
+1 skipped):
 parameter, `input` step, `uiPanel`, `schema-form`, `jenkinsRuns`, `gitRefs`,
 `argoCdApp`, optional approval, optional sandboxed forms, `formFrom` and
 single-file html, the Jenkinsfile checker, accessibility checks, runtimes
 `alpine3-csp`, and `alpine3`/`vue3` behind `allowEvalRuntimes`. Dev tooling
 (issue #94): `pnpm preview` (local page, real host.js, Jenkins CSP, fixtures,
 value verdict, live reload), `js/types/build-ui.d.ts` and `pnpm typecheck`;
-42 Node tests, 3 preview browser tests. Release and security workflows ready; the first tag comes after
+Git Parameter parity for `gitRefs` and integration tests with Git Parameter,
+Active Choices and job renames. Release and security workflows ready; the first tag comes after
 graduation (owner, 2026-10-27). GitHub Actions has run no push-triggered workflow in this repo since
 2026-06-25 and the manual jenkins-ui CI run stayed queued, so neither
 workflow has run on GitHub yet. Firefox and WebKit legs exist only in CI,
