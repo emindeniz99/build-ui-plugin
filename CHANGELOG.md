@@ -106,7 +106,12 @@ history.
   code. Configuration as Code: `unclassified.buildUi.sandboxAll`.
 - With approval on, sandboxed forms still need it; an approval given only for
   the sandbox does not carry over when a Jenkinsfile drops `sandbox: true`.
-- Tested in Chromium only.
+- The frame gets its document through `srcdoc` and inherits the page's
+  Content Security Policy. A frame with a document of its own ran no script
+  in WebKit, which reads `'self'` there as the frame's opaque origin.
+- Tested in Chromium, Firefox and WebKit (Playwright's builds, not Safari).
+  In WebKit the frame's image requests to Jenkins carry the viewer's cookies;
+  see the README's sandbox section.
 
 Known limit: with approval and the sandbox off, anyone who can push a
 Jenkinsfile can run JavaScript in the browser of every user who opens the
