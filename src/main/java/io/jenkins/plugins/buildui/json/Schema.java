@@ -88,6 +88,15 @@ public final class Schema {
             if (k.equals("x-git-ref") && !(v.isBoolean() && v.asBoolean() || v.isTextual() && GIT_REF_KINDS.contains(v.asText()))) {
                 throw bad(at, "x-git-ref must be true, \"branch\", \"tag\" or \"any\"");
             }
+            if (k.equals("x-git-repository")) {
+                // A glob of the job's remote URLs; the same 100-character limit as the gitRefs globs.
+                if (!v.isTextual() || v.asText().isEmpty() || v.asText().length() > 100) {
+                    throw bad(at, "x-git-repository must be a glob of a repository URL, 1 to 100 characters");
+                }
+                if (!s.has("x-git-ref")) {
+                    throw bad(at, "x-git-repository needs x-git-ref next to it");
+                }
+            }
             if (ANNOTATIONS.contains(k) || k.startsWith("x-")) {
                 continue;
             }

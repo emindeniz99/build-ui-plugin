@@ -1,10 +1,13 @@
 package io.jenkins.plugins.buildui;
 
 import edu.umd.cs.findbugs.annotations.CheckForNull;
+import hudson.Extension;
 import hudson.ExtensionList;
 import hudson.ExtensionPoint;
 import hudson.model.Computer;
+import hudson.model.Item;
 import hudson.model.Job;
+import hudson.model.listeners.ItemListener;
 import hudson.security.ACL;
 import hudson.security.ACLContext;
 import io.jenkins.plugins.buildui.json.Json;
@@ -177,6 +180,34 @@ public final class FormFrom {
     static String unsupported(Job<?, ?> job) {
         return "formFrom works in branch jobs of a multibranch Pipeline and in Pipeline jobs whose definition is"
                 + " 'Pipeline script from SCM'; " + job.getFullName() + " is neither";
+    }
+
+    /** Forgets the reads cached under a job's full name. */
+    static void forget(String fullName) {
+        String prefix = fullName + "\n";
+        synchronized (CACHE) {
+            CACHE.keySet().removeIf(key -> key.startsWith(prefix));
+        }
+    }
+
+    /**
+     * The cache is keyed by full name. Without this, a job that took a renamed
+     * or deleted job's name within {@link #CACHE_MILLIS} showed the other
+     * job's form, and its values were checked against the other job's schema.
+     * Jenkins reports a folder's move for every item inside it too.
+     */
+    @Extension
+    public static final class Renames extends ItemListener {
+        @Override
+        public void onLocationChanged(Item item, String oldFullName, String newFullName) {
+            forget(oldFullName);
+            forget(newFullName);
+        }
+
+        @Override
+        public void onDeleted(Item item) {
+            forget(item.getFullName());
+        }
     }
 
     /** Forgets every read, as an expired cache does. For tests. */

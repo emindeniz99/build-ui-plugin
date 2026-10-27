@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import edu.umd.cs.findbugs.annotations.CheckForNull;
 import hudson.EnvVars;
 import hudson.Extension;
 import hudson.model.Item;
@@ -21,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.regex.Matcher;
@@ -32,13 +34,19 @@ import org.jenkinsci.plugins.gitclient.Git;
 import org.jenkinsci.plugins.gitclient.GitClient;
 
 /**
- * {@code ui.query('gitRefs', { job, branches, tags, sort, limit })}: branches
- * and tags of the Git repositories that job already uses. The browser never
- * names a URL, so the controller only contacts servers a job is configured for
+ * {@code ui.query('gitRefs', { job, repository, branches, tags, search, sort, offset, limit })}:
+ * branches and tags of the Git repositories that job already uses. The browser
+ * never names a URL to contact: {@code repository} only picks among the job's
+ * own remotes, so the controller only contacts servers a job is configured for
  * (no SSRF), and the job's credentials stay on the controller. Filters are
- * globs ({@code *}, {@code ?}), not regular expressions, so a caller cannot
- * make the controller backtrack. Needs Build permission on the job, because
- * every uncached call contacts the remote. Loads only with the Git plugin.
+ * globs ({@code *}, {@code ?}) and {@code search} is a plain substring, never
+ * regular expressions, so a caller cannot make the controller backtrack. Needs
+ * Build permission on the job, because every uncached call contacts the
+ * remote. Loads only with the Git plugin.
+ *
+ * <p>The answer is {@code { branches, tags, total: { branches, tags } }}.
+ * {@code total} counts the entries after filtering and before paging, so a
+ * form knows whether {@code offset + limit} leaves more to fetch.
  */
 @Extension(optional = true)
 public class GitRefsProvider extends DataProvider implements RefLookup {
@@ -46,6 +54,7 @@ public class GitRefsProvider extends DataProvider implements RefLookup {
     static final long CACHE_MILLIS = 30_000;
     static final int DEFAULT_LIMIT = 200;
     static final int MAX_LIMIT = 1000;
+    static final int MAX_SEARCH = 100;
     /** Repositories with many tags take MBs each, so the cache keeps only the most recently used. */
     static final int CACHE_ENTRIES = 256;
     private static final Map<String, Cached> CACHE = new LinkedHashMap<>(64, 0.75f, true) {
@@ -69,20 +78,30 @@ public class GitRefsProvider extends DataProvider implements RefLookup {
     public JsonNode query(JsonNode args) {
         Job<?, ?> job = job(args.path("job").asText(""));
         job.checkPermission(Item.BUILD);
-        Pattern branchGlob = glob(args.path("branches").asText("*"), "branches");
-        Pattern tagGlob = glob(args.path("tags").asText("*"), "tags");
+        Globs.Glob branchGlob = Globs.compile(args.path("branches").asText("*"), "branches");
+        Globs.Glob tagGlob = Globs.compile(args.path("tags").asText("*"), "tags");
+        String repository = args.hasNonNull("repository") ? args.get("repository").asText() : null;
+        String search = args.path("search").asText("");
+        if (search.length() > MAX_SEARCH) {
+            throw new IllegalArgumentException("search is longer than " + MAX_SEARCH + " characters");
+        }
+        String needle = search.toLowerCase(Locale.ROOT);
         String sort = args.path("sort").asText("name");
         if (!sort.equals("name") && !sort.equals("version-desc")) {
             throw new IllegalArgumentException("sort must be 'name' or 'version-desc'");
         }
+        int offset = Math.max(args.path("offset").asInt(0), 0);
         int limit = Math.min(Math.max(args.path("limit").asInt(DEFAULT_LIMIT), 1), MAX_LIMIT);
 
         List<Ref> branches = new ArrayList<>();
         List<Ref> tags = new ArrayList<>();
-        for (Ref ref : refs(job)) {
-            if (ref.kind().equals("branch") && branchGlob.matcher(ref.name()).matches()) {
+        for (Ref ref : refs(job, repository)) {
+            if (!needle.isEmpty() && !ref.name().toLowerCase(Locale.ROOT).contains(needle)) {
+                continue;
+            }
+            if (ref.kind().equals("branch") && branchGlob.matches(ref.name())) {
                 branches.add(ref);
-            } else if (ref.kind().equals("tag") && tagGlob.matcher(ref.name()).matches()) {
+            } else if (ref.kind().equals("tag") && tagGlob.matches(ref.name())) {
                 tags.add(ref);
             }
         }
@@ -93,14 +112,15 @@ public class GitRefsProvider extends DataProvider implements RefLookup {
         tags.sort(order);
 
         ObjectNode result = JsonNodeFactory.instance.objectNode();
-        write(result.putArray("branches"), branches, limit);
-        write(result.putArray("tags"), tags, limit);
+        write(result.putArray("branches"), branches, offset, limit);
+        write(result.putArray("tags"), tags, offset, limit);
+        result.putObject("total").put("branches", branches.size()).put("tags", tags.size());
         return result;
     }
 
     @Override
-    public boolean hasRef(Job<?, ?> job, String name, String kind) {
-        for (Ref ref : refs(job)) {
+    public boolean hasRef(Job<?, ?> job, String name, String kind, @CheckForNull String repository) {
+        for (Ref ref : refs(job, repository)) {
             if (ref.name().equals(name) && (kind.equals("any") || ref.kind().equals(kind))) {
                 return true;
             }
@@ -108,8 +128,9 @@ public class GitRefsProvider extends DataProvider implements RefLookup {
         return false;
     }
 
-    private static void write(ArrayNode out, List<Ref> refs, int limit) {
-        for (Ref ref : refs.subList(0, Math.min(limit, refs.size()))) {
+    private static void write(ArrayNode out, List<Ref> refs, int offset, int limit) {
+        int from = Math.min(offset, refs.size());
+        for (Ref ref : refs.subList(from, Math.min(from + limit, refs.size()))) {
             out.addObject().put("name", ref.name()).put("sha", ref.sha()).put("repository", ref.repository());
         }
     }
@@ -125,8 +146,13 @@ public class GitRefsProvider extends DataProvider implements RefLookup {
         return job;
     }
 
-    /** All branches and tags of every Git remote the job uses, without peeled {@code ^{}} entries. */
-    static List<Ref> refs(Job<?, ?> job) {
+    /**
+     * All branches and tags of the Git remotes the job uses, without peeled
+     * {@code ^{}} entries. {@code repository}, when set, is a glob that keeps
+     * only the remotes whose configured URL it matches. It selects among the
+     * job's remotes and is never contacted itself.
+     */
+    static List<Ref> refs(Job<?, ?> job, @CheckForNull String repository) {
         SCMTriggerItem scmItem = SCMTriggerItem.SCMTriggerItems.asSCMTriggerItem(job);
         List<UserRemoteConfig> remotes = new ArrayList<>();
         if (scmItem != null) {
@@ -138,6 +164,16 @@ public class GitRefsProvider extends DataProvider implements RefLookup {
         }
         if (remotes.isEmpty()) {
             throw new NoRepositoryYetException(job.getFullName());
+        }
+        if (repository != null) {
+            Globs.Glob glob = Globs.compile(repository, "repository");
+            remotes.removeIf(remote -> {
+                String url = remote.getUrl();
+                return url == null || !glob.matches(url);
+            });
+            if (remotes.isEmpty()) {
+                throw new IllegalArgumentException("no Git repository of " + job.getFullName() + " matches '" + repository + "'");
+            }
         }
         List<Ref> out = new ArrayList<>();
         for (UserRemoteConfig remote : remotes) {
@@ -205,10 +241,6 @@ public class GitRefsProvider extends DataProvider implements RefLookup {
                 CredentialsProvider.lookupCredentialsInItem(StandardCredentials.class, job, ACL.SYSTEM2,
                         URIRequirementBuilder.fromUri(remote.getUrl()).build()),
                 CredentialsMatchers.withId(id));
-    }
-
-    static Pattern glob(String glob, String what) {
-        return Globs.compile(glob, what);
     }
 
     private static final Pattern CHUNK = Pattern.compile("\\d+|\\D+");

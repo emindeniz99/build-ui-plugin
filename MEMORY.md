@@ -48,6 +48,8 @@ never run locally (only Chromium is installed here). Open items:
 - 2026-10-27: single-file html (owner): the controller splits one module script and styles out of `html`/`form.html`; classic/src scripts and on*= are errors; uiPanel html not split
 - 2026-10-27: the preview reuses check.mjs exports instead of a second parser; its validator ports Schema.validate (JS regex, doubles: documented in schema.mjs); loopback bind plus a Host check against DNS rebinding
 - 2026-10-27: TypeScript 6.0.3 for typecheck, not 7.0.2 — one package without dependencies or install scripts; 7.0.2 pulls a native binary per platform. `strict: false`: TS 6's strict default fails every example module
+- 2026-10-27: gitRefs `repository` is a glob of the job's remote URLs (Git Parameter matches URLs too, by regex); `search` is a case-insensitive substring; paging adds `offset` and a `total` object, shape otherwise unchanged; `x-git-repository` narrows `x-git-ref`
+- 2026-10-27: where Git Parameter differs on purpose (tag path tail match, rc before release, `origin/` prefix, first repository only, listSize), gitRefs keeps its behaviour and GitParameterParityTest asserts the difference
 
 ## Learnings
 
@@ -86,15 +88,18 @@ never run locally (only Chromium is installed here). Open items:
 - 2026-10-27: Jelly escape-by-default turns `<` into `&lt;` but leaves `>` and `"` in text; assert on `&lt;script>`
 - 2026-10-27: TypeScript 6 defaults to `strict`; in checkJs that types `useState([])` as `never[]` and flags every unannotated parameter
 - 2026-10-27: Node's `fetch` ignores a caller's Host header; test Host checks with `node:http`
+- 2026-10-27: a glob compiled to regex backtracks: `.*a.*a.*a.*a.*b` took 20 s on 200 `a`s (Java 21); Globs now matches without regex
+- 2026-10-27: a JenkinsRule parameter on both @BeforeEach and the test method starts two Jenkins; the second fails with "Failed to bind" and "theInstance was not cleared"
+- 2026-10-27: caches keyed by job full name need an ItemListener (onLocationChanged, onDeleted); fireLocationChange also visits every item inside a moved folder
+- 2026-10-27: a cold JenkinsRule form page took 7.6 s; a test that must stay inside a 10 s cache window warms the pages first and times itself
+- 2026-10-27: `git commit --only` also refuses a new file with `pathspec did not match`; stage it with git add
 
 ## Done
 
 - 2026-10-27: local preview (`js/preview/`), module types and `typecheck`, `examples/preview-data.json`; 14 Node + 3 browser tests
-
+- 2026-10-27: Git Parameter parity for gitRefs (issue #94) and the integration matrix with Git Parameter, Active Choices, rename and folder move; fixed glob backtracking and stale formFrom reads after a rename (docs/design.md section 16). Ran on 2.541.1 only
 - 2026-10-27: `formFrom` (Pipeline from SCM, multibranch) and single-file html, checker rules, `examples/form-from/`
-
 - 2026-10-23: sandboxed forms (iframe, token endpoint, MessageChannel protocol), 15 JenkinsRule + 10 browser + 1 checker tests on 2.541.1
-
 - 2026-10-23: argoCdApp provider, JCasC, accessibility suite, example Jenkinsfiles under e2e, full suites green on 2.541.1 and 2.580.1
 - 2026-10-23: checker CLI, Preact vs Solid 2 comparison, gitRefs provider, release workflow and CHANGELOG for 0.1.0
 - 2026-10-23: plugin built and Phase 0 passed (32 JenkinsRule + 8 browser tests on 2.541.1 and 2.580.1), CI workflow added

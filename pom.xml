@@ -120,6 +120,25 @@
       <artifactId>pipeline-utility-steps</artifactId>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <!-- GitParameterParityTest compares gitRefs with what Git Parameter offers (issue #94). -->
+      <groupId>org.jenkins-ci.tools</groupId>
+      <artifactId>git-parameter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <!-- IntegrationTest: Active Choices next to a uiParameter on one form. Not in the BOM. -->
+      <groupId>org.biouno</groupId>
+      <artifactId>uno-choice</artifactId>
+      <version>2.8.11</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <!-- IntegrationTest moves a job into a folder. -->
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>cloudbees-folder</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <repositories>
