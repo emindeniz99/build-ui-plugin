@@ -93,8 +93,12 @@ const hash = crypto.createHash('sha256').update(importMap).digest('base64');
 const OWN_CSP = `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'`;
 const CSP = (process.env.LAB_CSP || OWN_CSP).replace(/script-src ([^;]*)/, `script-src $1 'sha256-${hash}'`);
 
+const PORT = Number(process.env.PORT || 4321);
+// Loopback only, and a Host check: a page on another site could otherwise read these files through DNS rebinding.
+const HOSTS = [`127.0.0.1:${PORT}`, `localhost:${PORT}`];
 const TYPES = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.html': 'text/html', '.svg': 'image/svg+xml', '.woff2': 'font/woff2' };
 http.createServer((req, res) => {
+  if (!HOSTS.includes(req.headers.host)) { res.writeHead(403); res.end(); return; }
   const url = new URL(req.url, 'http://x');
   if (url.pathname.startsWith('/page/')) {
     const name = url.pathname.slice(6);
@@ -113,7 +117,7 @@ ${name.startsWith('ex-') ? '' : '<link rel="stylesheet" href="/node_modules/@awe
   }
   const rel = decodeURIComponent(url.pathname);
   const file = rel.startsWith('/pages/') ? path.join(PAGES, rel.slice(7)) : path.join(ROOT, rel);
-  if (!file.startsWith(ROOT) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); res.end(); return; }
+  if (!file.startsWith(ROOT + path.sep) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); res.end(); return; }
   res.writeHead(200, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream' });
   fs.createReadStream(file).pipe(res);
-}).listen(Number(process.env.PORT || 4321), () => console.log('lab on', process.env.PORT || 4321, 'mapped', Object.keys(imports).length));
+}).listen(PORT, '127.0.0.1', () => console.log('lab on', `http://127.0.0.1:${PORT}`, 'mapped', Object.keys(imports).length));
