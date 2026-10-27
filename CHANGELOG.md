@@ -54,6 +54,13 @@ The first release. It needs Jenkins 2.541.1 or newer and Java 17.
   a `schema-form` form and the error fallback; forms work with the keyboard, typing "/" included; colors follow
   the Jenkins theme and meet 4.5:1 contrast.
 - A Jenkinsfile checker: `pnpm --dir projects/jenkins-ui/js check <file>`.
+- A local preview: `pnpm --dir projects/jenkins-ui/js preview <Jenkinsfile or
+  formFrom folder>` renders the forms with the plugin's own `host.js` and
+  runtimes under Jenkins's enforced CSP, answers `ui.query` from a JSON file,
+  shows the value with the controller's verdict, and reloads when a file
+  changes. No Jenkins needed.
+- Types for form modules (`js/types/build-ui.d.ts`) for editors, and
+  `pnpm --dir projects/jenkins-ui/js typecheck <files>`.
 - Examples: a reference form, parallel environment deploys, a release form
   and a `formFrom` folder, all run by the browser test suite.
 

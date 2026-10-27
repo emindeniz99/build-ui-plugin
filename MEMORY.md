@@ -11,7 +11,10 @@ Maven counts 123: our 114 plus 9 from the plugin parent, 1 skipped):
 parameter, `input` step, `uiPanel`, `schema-form`, `jenkinsRuns`, `gitRefs`,
 `argoCdApp`, optional approval, optional sandboxed forms, `formFrom` and
 single-file html, the Jenkinsfile checker, accessibility checks, runtimes
-`alpine3-csp`, and `alpine3`/`vue3` behind `allowEvalRuntimes`. Release and security workflows ready; the first tag comes after
+`alpine3-csp`, and `alpine3`/`vue3` behind `allowEvalRuntimes`. Dev tooling
+(issue #94): `pnpm preview` (local page, real host.js, Jenkins CSP, fixtures,
+value verdict, live reload), `js/types/build-ui.d.ts` and `pnpm typecheck`;
+42 Node tests, 3 preview browser tests. Release and security workflows ready; the first tag comes after
 graduation (owner, 2026-10-27). GitHub Actions has run no push-triggered workflow in this repo since
 2026-06-25 and the manual jenkins-ui CI run stayed queued, so neither
 workflow has run on GitHub yet. Firefox and WebKit legs exist only in CI,
@@ -43,6 +46,8 @@ never run locally (only Chromium is installed here). Open items:
 - 2026-10-27: `formFrom` reads the form folder from the branch head through SCMFileSystem (owner) — inline forms change only after a build; only multibranch branch jobs and Pipeline-from-SCM; others fail loud
 - 2026-10-27: formFrom cache key is job + folder, not revision — SCMFileSystem knows the revision only after opening; 10 s, 256 entries, failures cached, 20 s read bound
 - 2026-10-27: single-file html (owner): the controller splits one module script and styles out of `html`/`form.html`; classic/src scripts and on*= are errors; uiPanel html not split
+- 2026-10-27: the preview reuses check.mjs exports instead of a second parser; its validator ports Schema.validate (JS regex, doubles: documented in schema.mjs); loopback bind plus a Host check against DNS rebinding
+- 2026-10-27: TypeScript 6.0.3 for typecheck, not 7.0.2 — one package without dependencies or install scripts; 7.0.2 pulls a native binary per platform. `strict: false`: TS 6's strict default fails every example module
 
 ## Learnings
 
@@ -79,8 +84,12 @@ never run locally (only Chromium is installed here). Open items:
 - 2026-10-27: Pipeline `params` calls getDefaultParameterValue of every job parameter (ParamsVariable.getValue); a throwing default fails the build that defines it
 - 2026-10-27: SCMSource.SourceByItem and SCMHead.HeadByItem (scm-api) find a branch job's source and head; no branch-api dependency needed
 - 2026-10-27: Jelly escape-by-default turns `<` into `&lt;` but leaves `>` and `"` in text; assert on `&lt;script>`
+- 2026-10-27: TypeScript 6 defaults to `strict`; in checkJs that types `useState([])` as `never[]` and flags every unannotated parameter
+- 2026-10-27: Node's `fetch` ignores a caller's Host header; test Host checks with `node:http`
 
 ## Done
+
+- 2026-10-27: local preview (`js/preview/`), module types and `typecheck`, `examples/preview-data.json`; 14 Node + 3 browser tests
 
 - 2026-10-27: `formFrom` (Pipeline from SCM, multibranch) and single-file html, checker rules, `examples/form-from/`
 

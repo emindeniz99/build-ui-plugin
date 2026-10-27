@@ -31,8 +31,9 @@ frontend build step.
 0.1.0 is ready to release (see [`CHANGELOG.md`](./CHANGELOG.md)). The first
 tag comes after graduation, from the standalone repository. Every test passed on Jenkins 2.541.1 and 2.580.1 on 2026-10-27.
 The project has 85 JenkinsRule
-tests, 29 plain unit tests, 45 browser tests (Chromium) under enforced CSP
-and 28 checker tests (counted 2026-10-27). CI also
+tests, 29 plain unit tests, 45 browser tests (Chromium) under enforced CSP,
+42 Node tests of the checker, the preview and the types, and 3 browser tests
+of the preview (counted 2026-10-27). CI also
 runs the browser tests in Firefox and WebKit on 2.580.1. The reference
 form is [`examples/reference.Jenkinsfile`](./examples/reference.Jenkinsfile)
 (53 lines). Design, measurements and open questions:
@@ -46,8 +47,9 @@ form is [`examples/reference.Jenkinsfile`](./examples/reference.Jenkinsfile)
 | [`examples/parallel-envs.Jenkinsfile`](./examples/parallel-envs.Jenkinsfile) | Deploy to several test environments: cards with each environment's last build (from `jenkinsRuns` history), search, select shown, services, auto-deploy |
 | [`examples/release.Jenkinsfile`](./examples/release.Jenkinsfile) | Cut a release: branch and base tag from `gitRefs` (newest version first), a preview of the next tag, a special-version override, and `x-git-ref` so the controller rejects refs that do not exist |
 | [`examples/form-from/`](./examples/form-from) | A form kept in the repository with `formFrom`: one `form.html` with style, markup and module, plus `schema.json` and `default.json` |
+| [`examples/preview-data.json`](./examples/preview-data.json) | Answers to the examples' `ui.query` calls for the [local preview](#preview-a-form-locally) |
 
-The browser suite runs all four against a real Jenkins.
+The browser suite runs all four forms against a real Jenkins.
 
 ## Use it
 
@@ -528,6 +530,105 @@ variables or a `"${…}"` GString gets a warning. It does not check `defaultJson
 against the schema; the controller does that when a build uses the default. A
 file with no `uiParameter` or `uiPanel` call fails the check.
 
+### Preview a form locally
+
+```bash
+pnpm --dir projects/jenkins-ui/js install   # once
+pnpm --dir projects/jenkins-ui/js preview projects/jenkins-ui/examples/reference.Jenkinsfile \
+  --data projects/jenkins-ui/examples/preview-data.json
+```
+
+Open the address it prints, `http://127.0.0.1:4380/` by default. You need no
+Jenkins and no build. The page shows each `uiParameter` of the file, the
+checker's findings above them, and next to each form its JSON value with the
+answer the controller would give: accepted, or the controller's messages.
+Edit the Jenkinsfile, a `formFrom` file or the data file and the page reloads.
+
+The page matches Jenkins where a form can break:
+
+- It loads `host.js` and the runtime bundles from `src/main/webapp`, uses the
+  markup of the parameter's Jelly view, and sends the Content Security Policy
+  that Jenkins 2.541.1 and 2.580.1 enforce. The page and the terminal list
+  every CSP violation.
+- It splits a single-file `html` and reads a `formFrom` folder with the
+  checker's rules. A form the controller would refuse shows the reason and
+  the JSON field, as on Jenkins.
+- A form with `sandbox: true` runs in the sandboxed frame.
+
+To preview a `formFrom` folder without its Jenkinsfile, name the folder:
+`preview projects/jenkins-ui/examples/form-from/forms/deploy`. The parameter
+then takes the folder's name.
+
+| Option | Meaning |
+|---|---|
+| `--param NAME` | Show only this parameter |
+| `--data FILE` | Answers for `ui.query` (below) |
+| `--port N` | Port on 127.0.0.1, default 4380; `0` picks a free one |
+| `--root DIR` | Repository root for `formFrom` paths; default: the Git top level of the Jenkinsfile |
+| `--runtime ID` | Runtime for a folder previewed on its own; default `preact11-htm3` |
+
+The data file holds one JSON object keyed by provider id. A value is the
+answer to every query of that provider. To answer by arguments, give
+`$cases`; the first case whose `args` all equal the query's arguments wins,
+and a case without `args` matches any query:
+
+```json
+{
+  "gitRefs": { "branches": [{ "name": "main", "sha": "3f2a9c1", "repository": "https://git.example.com/app.git" }], "tags": [] },
+  "jenkinsRuns": { "$cases": [
+    { "args": { "parameter": "DEPLOY" }, "answer": [{ "number": 42, "result": "SUCCESS", "config": { "env": "dev" } }] },
+    { "answer": [] }
+  ] }
+}
+```
+
+A query with no matching entry fails in the form with a message that names
+the provider and the file, and the terminal prints it.
+[`examples/preview-data.json`](./examples/preview-data.json) answers every
+query of the examples.
+
+Where the preview differs from Jenkins:
+
+- It loads none of Jenkins's stylesheets, so a form sees the fallbacks of the
+  Jenkins variables it uses, such as `#ccc` in `var(--input-border, #ccc)`.
+- `ui.job` is `preview`.
+- `alpine3` and `vue3` show the error of a Jenkins that enforces CSP.
+- The value check runs `pattern` as a JavaScript regular expression without
+  the 50 ms budget, and compares numbers as JavaScript doubles. It does not
+  check `x-git-ref`.
+- An inline form shows your edit on the next reload. On Jenkins a build must
+  run the new Jenkinsfile first ([above](#when-a-changed-form-shows-up)).
+- It shows `uiParameter` forms only, not `uiPanel`.
+- It listens on 127.0.0.1 and answers only requests addressed to
+  `127.0.0.1`, `localhost` or `[::1]`.
+
+### Editor type checking
+
+[`js/types/build-ui.d.ts`](./js/types/build-ui.d.ts) describes the module
+contract: `mount`, `ui` with the shipped data providers' arguments and
+answers, and what each runtime passes as `runtime`. It imports nothing, so
+you can copy it next to your forms. Annotate `mount` and your editor checks
+the module:
+
+```js
+// @ts-check
+/** @type {import('./build-ui').MountFor<'preact11-htm3', { branch: string }>} */
+export default function mount({ root, ui, runtime: { html, render, useState } }) {
+  // ui.value is { branch: string }; ui.query('gitRefs', { tags: 'v*' }) is an error: job is missing
+}
+```
+
+To check from a terminal or CI:
+
+```bash
+pnpm --dir projects/jenkins-ui/js typecheck path/to/form.mjs
+```
+
+The command runs TypeScript 6.0.3 with `checkJs`, the browser's DOM types and
+`strict` off. It reads `.js` and `.mjs` files. A module written inside a
+Jenkinsfile or a `form.html` has no file of its own for TypeScript to read,
+so keep it in `form.mjs` to check it.
+
 ### CSP and styling
 
 The plugin works with Jenkins's enforced policy and never weakens it. Inline
@@ -547,6 +648,8 @@ mvn -f projects/jenkins-ui/pom.xml hpi:run \
   -Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true   # Jenkins at http://localhost:8080/jenkins/
 pnpm --dir projects/jenkins-ui/js install
 pnpm --dir projects/jenkins-ui/js e2e               # browser tests against hpi:run
+pnpm --dir projects/jenkins-ui/js test              # checker, preview and type tests (Node)
+pnpm --dir projects/jenkins-ui/js preview:e2e       # browser tests of the preview, no Jenkins
 pnpm --dir projects/jenkins-ui/js vendor            # rebuild runtime bundles after editing js/runtimes
 ```
 

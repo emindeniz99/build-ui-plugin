@@ -703,3 +703,61 @@ JenkinsRule on Jenkins 2.541.1, Git plugin 5.10.1, scm-api 728, git 2.43.0,
   report it as a conflict.
 - Only Git was tried, only `file:` repositories without credentials, only
   Chromium.
+
+## 15. Local preview and module types (Tested)
+
+Issue #94 asks for local preview and editor checking. `js/test/preview.test.mjs`
+(10 Node tests), `js/preview/preview.spec.mjs` (3 Chromium tests, no Jenkins)
+and `js/test/typecheck.test.mjs` (4 Node tests) cover this section.
+
+### Mechanism
+
+- `js/preview/server.mjs` serves the page, the content store, the query
+  endpoint, the sandbox frame and the plugin's files under the paths Jenkins
+  uses, so `host.js` and `sandbox/boot.js` run unchanged. Content keys are the
+  SHA-256 of the text, as in `ContentStore`.
+- Each page response carries the header from section 6 plus
+  `report-uri /_preview/csp-report`; the server prints each report.
+- It reads Jenkinsfiles and `formFrom` folders through the checker's exported
+  functions (`tokenize`, `findCalls`, `splitHtml`, `readFormFolder`,
+  `parseJson`, `checkSchema`), and joins the parts as `FormCode.of` does. The
+  checker and the preview keep one copy of each rule.
+- `js/preview/schema.mjs` ports `Schema.validate` with the same keyword
+  order, JSON Pointers and messages. The JSON limits come from the checker's
+  `parseJson`. Differences: JavaScript regular expressions with no time
+  budget, doubles instead of exact decimals.
+- The page script outside the forms polls each value textarea every 200 ms,
+  because `host.js` sets `textarea.value`, which fires no event, and asks the
+  server for the verdict. Reloads arrive over server-sent events from
+  `fs.watch` on the folders of the watched files: editors that replace a file
+  on save end a watch on the file itself.
+- The server listens on loopback only and answers 403 to a Host header other
+  than `127.0.0.1`, `localhost` or `[::1]` with its port. A loopback bind alone
+  does not stop DNS rebinding.
+- `js/types/build-ui.d.ts` imports nothing, so it works when copied into
+  another repository. `MountFor<id, Value>` maps a runtime id to its
+  `runtime` type. `ui.query` has one overload per shipped provider, and the
+  catch-all overload refuses those ids, so their arguments stay checked.
+- `pnpm typecheck` runs the TypeScript 6.0.3 compiler API with `checkJs` and
+  `strict: false`. TypeScript 6 defaults to strict; with it all four example
+  modules failed (implicit `any` parameters, `useState([])` typed `never[]`).
+
+### Measured (2026-10-27, Node 24.22.1, Chromium from Playwright 1.56.1)
+
+- The three preview browser tests took 3.1 s together; the ten Node tests
+  1.5 s.
+- `pnpm typecheck` on one module took 2.2 s and 2.8 s in two runs, almost all
+  of it loading the compiler and `lib.dom.d.ts`.
+- Under the preview's CSP, `new Function()` in a module threw, the page
+  listed `script-src blocked eval`, and the server logged the report.
+
+### Limits
+
+- The preview loads no Jenkins stylesheet and shows `uiParameter` forms only;
+  `ui.job` is `preview`.
+- The value check does not run `x-git-ref`, and its `pattern` can disagree
+  with Java's on syntax that only one of them accepts.
+- No test compares the preview's split with `SingleFileHtml` on the same
+  input. Both follow the rules in section 14, and the checker tests pin the
+  JavaScript side.
+- Only Chromium ran the browser tests.
