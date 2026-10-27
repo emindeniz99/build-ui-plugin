@@ -121,7 +121,23 @@ jobs:
           done
           tail -100 hpi-run.log
           exit 1
+      # Engine facts behind docs/design.md sections 12 and 13, measured on the
+      # same browser builds as the suite. Firefox and WebKit run nowhere else.
+      - name: Browser probes (sandboxed frame, eval runtimes)
+        run: |
+          for browser in ${BROWSERS//,/ }; do
+            node js/lab/sandbox-probe.mjs "$browser"
+            node js/lab/eval-runtime-probe.mjs "$browser"
+          done
       - run: pnpm --dir js e2e
+      - name: Playwright traces of failed tests
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-traces-${{ matrix.line }}
+          path: js/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Jenkins log
         if: failure()
         run: test -f hpi-run.log && tail -200 hpi-run.log || echo "Jenkins did not start; no hpi-run.log"
