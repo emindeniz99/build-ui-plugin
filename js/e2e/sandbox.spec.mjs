@@ -157,8 +157,9 @@ export default async function mount({ root, ui }) {
   await expect(f.locator('.failure')).toHaveText("unknown data provider 'no-such-provider'");
 
   const iframe = page.locator('.build-ui-root iframe');
+  // The frame's first height message can arrive after its text renders (seen in WebKit).
+  await expect.poll(async () => (await iframe.boundingBox()).height).toBeGreaterThan(30);
   const before = (await iframe.boundingBox()).height;
-  expect(before).toBeGreaterThan(30);
   await f.getByRole('button', { name: 'Grow' }).click();
   await expect.poll(async () => (await iframe.boundingBox()).height).toBeGreaterThanOrEqual(before + 600);
   const frame = await (await iframe.elementHandle()).contentFrame();
