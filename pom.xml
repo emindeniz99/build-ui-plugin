@@ -120,6 +120,12 @@
       <artifactId>pipeline-utility-steps</artifactId>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <!-- GitParameterParityTest compares gitRefs with what Git Parameter offers (issue #94). -->
+      <groupId>org.jenkins-ci.tools</groupId>
+      <artifactId>git-parameter</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <repositories>
