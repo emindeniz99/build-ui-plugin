@@ -214,6 +214,9 @@ importers:
       solid-js:
         specifier: 2.0.0-rc.15
         version: 2.0.0-rc.15
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
       uhtml:
         specifier: ^5.0.9
         version: 5.0.9
@@ -222,7 +225,7 @@ importers:
         version: 1.6.1
       vue:
         specifier: ^3.5.0
-        version: 3.5.44
+        version: 3.5.44(typescript@6.0.3)
 
 packages:
 
@@ -688,6 +691,11 @@ packages:
     resolution: {integrity: sha512-uxc/zpqFg6x7C8vOE7lh6Lbda8eEL9zmVm/PLeTPBRhh1xCgdWaQ+J1CUieGpIfm2HdtsUpRv+HshiasBMcc6A==}
     engines: {node: '>=6'}
 
+  typescript@6.0.3:
+    resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
+    engines: {node: '>=14.17'}
+    hasBin: true
+
   uhtml@5.0.9:
     resolution: {integrity: sha512-qPyu3vGilaLe6zrjOCD/xezWEHLwdevxmbY3hzyhT25KBDF4F7YYW3YZcL3kylD/6dMoVISHjn8ggV3+9FY+5g==}
 
@@ -1124,18 +1132,22 @@ snapshots:
 
   tapable@2.3.3: {}
 
+  typescript@6.0.3: {}
+
   uhtml@5.0.9:
     dependencies:
       '@webreflection/alien-signals': 0.3.2
 
   vanjs-core@1.6.1: {}
 
-  vue@3.5.44:
+  vue@3.5.44(typescript@6.0.3):
     dependencies:
       '@vue/compiler-dom': 3.5.44
       '@vue/compiler-sfc': 3.5.44
       '@vue/runtime-dom': 3.5.44
       '@vue/server-renderer': 3.5.44
       '@vue/shared': 3.5.44
+    optionalDependencies:
+      typescript: 6.0.3
 
   web-streams-polyfill@3.3.3: {}

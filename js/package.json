@@ -20,7 +20,8 @@
     "check": "node scripts/check.mjs",
     "preview": "node preview/server.mjs",
     "preview:e2e": "playwright test -c playwright.preview.config.mjs",
-    "test": "node --test test/check.test.mjs test/preview.test.mjs",
+    "typecheck": "node scripts/typecheck.mjs",
+    "test": "node --test test/check.test.mjs test/preview.test.mjs test/typecheck.test.mjs",
     "lab": "node lab/server.mjs",
     "lab:test": "node lab/run3.mjs",
     "e2e": "playwright test"
@@ -42,6 +43,7 @@
     "petite-vue": "0.4.1",
     "preact": "11.0.1",
     "solid-js": "2.0.0-rc.15",
+    "typescript": "6.0.3",
     "uhtml": "^5.0.9",
     "vanjs-core": "^1.6.1",
     "vue": "^3.5.0"
