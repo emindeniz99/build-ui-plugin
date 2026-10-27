@@ -12,6 +12,9 @@ export default defineConfig({
   reporter: [['list']],
   use: {
     baseURL: process.env.JENKINS_URL || 'http://127.0.0.1:8080/jenkins/',
+    // Firefox and WebKit run only in CI, so a failure there must carry its own
+    // evidence: the trace holds every frame's console, network and DOM.
+    trace: process.env.CI ? 'retain-on-failure' : 'off',
   },
   projects: browsers.map((name) => ({ name, use: { browserName: name } })),
 });

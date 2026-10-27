@@ -18,9 +18,10 @@ tests with Git Parameter, Active Choices and job renames. Release and
 security workflows are ready but have never run on GitHub: in the monorepo
 where the project began, Actions ran no push-triggered workflow after
 2026-06-25 and a manual CI run stayed queued. The first tag waits until they
-pass (owner, 2026-10-27; README » Release). Firefox and WebKit legs exist
-only in CI, never run locally (only Chromium was installed). Open items:
-`docs/design.md` section 10.
+pass (owner, 2026-10-27; README » Release). The browser suite passes in
+Chromium, Firefox and WebKit in CI on 2.580.1 (Firefox and WebKit run only
+there; this container has only Chromium). Open items: `docs/design.md`
+section 10.
 
 ## Decisions
 
@@ -52,17 +53,11 @@ only in CI, never run locally (only Chromium was installed). Open items:
 - 2026-10-27: gitRefs `repository` is a glob of the job's remote URLs (Git Parameter matches URLs too, by regex); `search` is a case-insensitive substring; paging adds `offset` and a `total` object, shape otherwise unchanged; `x-git-repository` narrows `x-git-ref`
 - 2026-10-27: where Git Parameter differs on purpose (tag path tail match, rc before release, `origin/` prefix, first repository only, listSize), gitRefs keeps its behaviour and GitParameterParityTest asserts the difference
 - 2026-10-27: review fixes: formFrom in a multibranch job reads the revision `getTrustedRevision` picks, as SCMBinder does for the Jenkinsfile; gitRefs drops `user:password@` from scheme URLs in answers, errors and globs (scp-like `git@host:x` stays); single-file html is read as the HTML tokenizer reads it and the markup left after the split is checked
+- 2026-10-27: sandboxed frame document goes in `srcdoc` (fetched from /build-ui/frame), not `src` — WebKit runs no script in a sandboxed frame under its own Jenkins policy; srcdoc inherits the page's policy. Rejected: a frame policy naming the origin, which replaces Jenkins's header
+- 2026-10-27: browser tests assert each engine's measured behaviour where engines differ (WebKit report-only silence, WebKit `document.cookie` = ""), so a change in an engine fails a test instead of passing silently
 
 ## Learnings
 
-- 2026-10-23: `hpi:run` loads test-scope plugins (Pipeline) and serves `src/main/webapp` live; give each Jenkins line its own `-DJENKINS_HOME`
-- 2026-10-23: pnpm's isolated layout breaks a browser import map over node_modules; the lab uses `nodeLinker: hoisted`
-- 2026-10-23: input step console shows "Input requested", not the message, when it has parameters
-- 2026-10-23: Preact 11 runs effect cleanups after render(null) returns; wait before asserting a timer stopped
-- 2026-10-23: the Git plugin refuses file: URLs unless hudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true (tests only)
-- 2026-10-23: Jenkins's "/" search shortcut steals keys from inputs in a shadow root; host.js stops keydown propagation from editable targets
-- 2026-10-23: Jenkins `--error-color` and `--text-color-secondary` fail 4.5:1 contrast; mix them toward `--text-color` with color-mix
-- 2026-10-23: a parameterized job answers a bare POST /build with 400; use buildWithParameters
 - 2026-10-23: Alpine.start() inits page markup outside the form and never reaches shadow roots; use initTree(root) and destroyTree(root). Alpine.data names are page-global: a later x-if component got the other form's definition
 - 2026-10-23: system property jenkins.security.csp.CspHeader.headerName=Content-Security-Policy-Report-Only beats hpi:run's enforced default and is read per request; set it via scriptText
 - 2026-10-23: ScriptApproval.configuring() saves to disk on every call and auto-approves when security is off; getPendingScripts() is restricted API
@@ -89,12 +84,17 @@ only in CI, never run locally (only Chromium was installed). Open items:
 - 2026-10-27: browsers end a comment at `<!-->`, `<!--->` and `--!>`, split attributes at `/` and after a closing quote, and count only tab, LF, FF, CR and space as space (checked with innerHTML in Chromium)
 - 2026-10-27: in Node, `rest.endsWith()` or `rest[i]` on a string built with `+=` flattens it each call; once per element made splitHtml quadratic (40 000 styles: 3.5 s)
 - 2026-10-27: `ExtensionList.add(int, T)` ignores the index; a test that needs its own extension first removes the others
+- 2026-10-27: WebKit 26 matches CSP `'self'` in a sandboxed document's own policy against its opaque origin: no script runs. srcdoc frames inherit the page's policy and run (js/lab/sandbox-probe.mjs)
+- 2026-10-27: WebKit ignores a report-only CSP without report-uri, and with one it still neither fires securitypolicyviolation nor reports evals; Firefox logs each report-only eval as a console error
+- 2026-10-27: WebKit sends SameSite=Lax cookies with no-CORS requests (images, classic scripts) from a sandboxed frame; Chromium and Firefox do not
+- 2026-10-27: WebKit raises an unhandled "TypeError: Load failed" for a fetch a page navigation cancels (Jenkins's buildHistory poll after Build), reported before Playwright sees the navigation; watch() drops it only when a main-frame commit follows within 2 s
+- 2026-10-27: `vendor:check` also enforces host.js's 4 KB gzip budget; long comments in host.js count. Run it after any host.js change
+- 2026-10-27: CI uploads Playwright traces of failed tests (artifact `playwright-traces-<line>`); `actions_get download_workflow_run_artifact` gives a short-lived URL, and the pageError and network events sit in `*-trace.trace` / `*-trace.network`
 
 ## Done
 
+- 2026-10-27: first three-engine CI run fixed: sandboxed forms in WebKit (srcdoc), report-only tests per engine, probes per engine in CI, traces on failure; branch run 40551802902 green (135 browser tests on 2.580.1, 45 on 2.541.1)
 - 2026-10-27: four review findings fixed (formFrom trust, single-file handler bypasses in Java and the checker, URL userinfo in gitRefs and formFrom errors, lab server bind); full `mvn verify` on 2.541.1 only
 - 2026-10-27: local preview (`js/preview/`), module types and `typecheck`, `examples/preview-data.json`; 14 Node + 3 browser tests
 - 2026-10-27: Git Parameter parity for gitRefs and the integration matrix with Git Parameter, Active Choices, rename and folder move; fixed glob backtracking and stale formFrom reads after a rename (docs/design.md section 16). Ran on 2.541.1 only
 - 2026-10-27: `formFrom` (Pipeline from SCM, multibranch) and single-file html, checker rules, `examples/form-from/`
-- 2026-10-23: sandboxed forms (iframe, token endpoint, MessageChannel protocol), 15 JenkinsRule + 10 browser + 1 checker tests on 2.541.1
-- 2026-10-23: argoCdApp provider, JCasC, accessibility suite, example Jenkinsfiles under e2e, full suites green on 2.541.1 and 2.580.1

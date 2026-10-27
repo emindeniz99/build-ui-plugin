@@ -100,6 +100,19 @@ export async function watch(page) {
   const expected = /status of 405 \(Method Not Allowed\)/;
   page.on('console', (m) => { if (m.type() === 'error' && !expected.test(m.text())) problems.push(m.text()); });
   page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
+  // Leaving the page cancels Jenkins's own requests (the build history poll), and WebKit
+  // reports each cancelled fetch as an unhandled "TypeError: Load failed", before Playwright
+  // sees the navigation start. That error is dropped only when the main frame commits a new
+  // document within 2 s after it.
+  const cancelled = [];
+  page.on('pageerror', (e) => { if (e.message === 'TypeError: Load failed') cancelled.push(Date.now()); });
+  page.on('framenavigated', (f) => {
+    if (f !== page.mainFrame()) return;
+    for (const at of cancelled.splice(0)) {
+      const i = problems.indexOf('pageerror: TypeError: Load failed');
+      if (Date.now() - at < 2000 && i >= 0) problems.splice(i, 1);
+    }
+  });
   await page.addInitScript(() => {
     document.addEventListener('securitypolicyviolation', (e) => console.error(`CSP ${e.violatedDirective} ${e.blockedURI}`));
   });

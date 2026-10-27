@@ -31,14 +31,21 @@ frontend build step.
 0.1.0 is ready to release (see [`CHANGELOG.md`](./CHANGELOG.md)) and has no
 tag yet; [Release](#release) lists the steps. Every test passed on Jenkins 2.541.1 and 2.580.1 on 2026-10-27.
 The project has 104 JenkinsRule
-tests, 33 plain unit tests, 45 browser tests (Chromium) under enforced CSP,
+tests, 33 plain unit tests, 45 browser tests under enforced CSP,
 48 Node tests of the checker, the preview and the types, and 3 browser tests
 of the preview (counted 2026-10-27). Maven reports 146 Java tests: our 137
-plus 9 that the plugin parent generates, one of them skipped. CI also
-runs the browser tests in Firefox and WebKit on 2.580.1. The reference
+plus 9 that the plugin parent generates, one of them skipped. The reference
 form is [`examples/reference.Jenkinsfile`](./examples/reference.Jenkinsfile)
 (53 lines). Design, measurements and open questions:
 [`docs/design.md`](./docs/design.md).
+
+Browser support: the 45 browser tests pass in CI in Chromium on 2.541.1 and
+in Chromium, Firefox and WebKit on 2.580.1, with Playwright 1.56.1's builds
+(Chromium 141, Firefox 142, WebKit 26.0). Nobody has tested Safari itself or
+a mobile browser. Two engine differences matter to users: WebKit reports
+nothing in [report-only mode](#runtimes-that-need-eval-off-by-default), and
+a [sandboxed form](#sandboxed-forms-optional) in WebKit sends your cookies
+with requests made without CORS, such as images.
 
 ## Examples
 
@@ -307,8 +314,10 @@ day an admin enforces CSP. That is why they are off by default.
 - With the setting on and CSP enforced, the form says "This form's runtime
   needs eval, which this Jenkins's Content Security Policy blocks" and shows
   the JSON field. The runtime file is not loaded.
-- With the setting on and CSP in report-only mode, the form works, and the
-  browser reports each eval to Jenkins as a CSP violation.
+- With the setting on and CSP in report-only mode, the form works.
+  Chromium and Firefox report each eval to Jenkins as a CSP violation.
+  WebKit 26.0 reports none, so the reports Jenkins collects miss every
+  Safari user of these forms.
 - The plugin never adds `unsafe-eval` to Jenkins's policy.
 - Approval of form code applies to these runtimes as to the others. A form
   whose runtime is blocked does not reach the pending list.
@@ -513,12 +522,13 @@ unclassified:
 The module keeps the same contract: `root` sits in a shadow root, `ui.value`,
 `ui.setValue`, `ui.query`, `ui.job`, `ui.name`, `ui.schema`, `runtime` and
 `signal` work as on the page, and the frame grows with its content. What
-changes is what the code can reach. The frame has an origin of its own, so
-in Chromium the code:
+changes is what the code can reach. The frame has an opaque origin of its
+own and runs under the page's Content Security Policy, so in Chromium,
+Firefox and WebKit the code:
 
 - cannot read or change the Jenkins page (`parent.document` throws);
-- cannot read cookies (`document.cookie` throws), and its own requests to
-  Jenkins carry none;
+- cannot read cookies (`document.cookie` throws in Chromium and Firefox and
+  returns an empty string in WebKit);
 - cannot call the Jenkins API with `fetch`, because Jenkins sends no CORS
   headers to the frame;
 - cannot navigate the page;
@@ -541,8 +551,13 @@ What the sandbox does not stop:
   receives it.
 - Browsers have channels that Jenkins's CSP does not cover, such as WebRTC.
   We have not tested whether a sandboxed form can send data out through them.
-- Only Chromium is tested. Firefox and Safari should behave the same, but
-  nobody has checked.
+- In WebKit the frame's requests to Jenkins made without CORS, such as
+  images, carry your session cookie (`SameSite=Lax` does not stop them),
+  so the code can make GET requests as you without reading the answers. Chromium and Firefox
+  send no cookies with them. Jenkins core needs a POST with a crumb to
+  change anything, and the frame cannot read a crumb; a plugin with a GET
+  endpoint that changes state would be exposed.
+- WebKit was tested as Playwright's WebKit 26.0 build, not as Safari.
 
 With [approval](#approval-of-form-code-optional) on, a sandboxed form still
 waits for an admin. Code approved for the page may also run in the sandbox;

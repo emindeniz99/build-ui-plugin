@@ -6,7 +6,9 @@ what we hope:
 
 - **Fact:** read in official docs or source code, with a link.
 - **Measured:** we ran it in the lab or against a real Jenkins (Chromium,
-  Playwright 1.56.1) on 2026-10-22/23. Firefox and Safari: not tested.
+  Playwright 1.56.1) on 2026-10-22/23. Firefox and WebKit only where a claim
+  names them: CI, Playwright 1.56.1's Firefox 142.0.1 and WebKit 26.0,
+  2026-10-27. Safari itself: not tested.
 - **Tested:** built, and a JenkinsRule or browser test in this project
   covers it.
 - **Assumption:** we believe it, nobody has checked it yet.
@@ -337,7 +339,9 @@ when a real form needs fine-grained updates that Preact cannot keep fast.
 
 ## 8. Assumptions
 
-- The plugin behaves the same in Firefox and Safari as in Chromium.
+- Safari behaves as Playwright's WebKit 26.0 build does. The browser suite
+  passes in Chromium, Firefox and that build (sections 12 and 13 list where
+  the engines differ).
 - In a multibranch job, a branch's Jenkinsfile writes its parameter
   definitions into that branch job (section 3).
 
@@ -362,8 +366,6 @@ JenkinsRule tests, 8 browser tests).
 
 ## 10. Not built yet
 
-- Sandboxed forms in Firefox and WebKit: the sandbox tests have run only in
-  Chromium (on 2.541.1 and 2.580.1).
 - Exfiltration from a sandboxed frame through channels Jenkins's CSP does
   not cover (WebRTC, DNS prefetch): not tested, not claimed.
 - Live theme changes in a sandboxed frame: the host copies the theme once,
@@ -374,8 +376,9 @@ JenkinsRule tests, 8 browser tests).
 - A release: the workflow and `CHANGELOG.md` exist, and a local rehearsal of
   its steps built `build-ui.hpi` 0.1.0. No tag exists yet; README » Release
   lists the steps before the first one.
-- Firefox and WebKit runs: CI runs them on the current LTS line, but this
-  container has only Chromium, so no Firefox or WebKit run has happened yet.
+- Firefox and WebKit on the minimum line: CI runs them on 2.580.1 only,
+  and this container has only Chromium.
+- Safari and mobile browsers: not tested.
 - `formFrom` with an SCM other than Git, or with a remote that needs
   credentials: the tests use local Git repositories without credentials
   (on 2.541.1 and 2.580.1; section 14).
@@ -481,6 +484,16 @@ Jenkins.
 - Report-only CSP: `alpine3` and `vue3` render, and the page fires one
   `securitypolicyviolation` event per eval with disposition `report`.
   Chromium prints nothing to the console for them.
+- Other engines (`eval-runtime-probe.mjs` in CI, 2026-10-27, header with
+  `report-uri` as Jenkins sends it): enforced CSP behaves the same in
+  Firefox 142.0.1 and WebKit 26.0. In report-only mode Firefox fires the
+  events, sends the reports and also logs each eval as a console error
+  ("(Report-Only policy) The page's settings would block a JavaScript
+  eval"). WebKit runs the evals, fires no event, sends no report and logs
+  only "The Content Security Policy directive 'frame-ancestors' is ignored
+  when delivered in a report-only policy." Without `report-uri` it ignores
+  a report-only header entirely. `runtimes.spec.mjs` asserts each engine's
+  behaviour.
 - Jenkins 2.541.1 picks the CSP header through `CspHeaderDecider`
   extensions, read per request (Fact: bytecode of `jenkins-core` 2.541.1).
   The highest ordinal reads the system property
@@ -493,9 +506,10 @@ Jenkins.
 
 - `alpine3` and `vue3` break for every user on the day an admin enforces
   CSP. Their forms then fall back to the JSON field.
-- In report-only mode the browser reports each eval as a violation to the
-  `report-uri` Jenkins names (Assumption: we saw the events, not the
-  requests). Jenkins's log at default levels showed nothing for them.
+- In report-only mode Chromium and Firefox report each eval to the
+  `report-uri` Jenkins names (Measured in the probe, which counts the
+  requests; against Jenkins we saw the events only). WebKit reports none.
+  Jenkins's log at default levels showed nothing for them.
 - `alpine3-csp` expressions are property paths and simple calls; logic
   belongs in `Alpine.data` components.
 - `x-teleport` finds its target with `document.querySelector` (read in the
@@ -504,7 +518,8 @@ Jenkins.
 ## 13. Sandboxed forms (Tested)
 
 `SandboxTest` (JenkinsRule) covers the endpoints; `js/e2e/sandbox.spec.mjs`
-(Chromium, Jenkins 2.541.1 and 2.580.1) covers the browser side.
+covers the browser side: Chromium on Jenkins 2.541.1 and 2.580.1, Firefox and
+WebKit on 2.580.1 (CI).
 
 ### Mechanism
 
@@ -512,10 +527,12 @@ Jenkins.
    or `sandboxAll` is on, and the form has a module, HTML or CSS. A
    `schema-form` without HTML or CSS runs only the plugin's code and stays
    on the page. Approval (section 3) decides first whether the root exists.
-2. `host.js` fetches the HTML and CSS as before and adds
-   `<iframe sandbox="allow-scripts" title="<form name>">` to the shadow root.
-   Its `src` is `/build-ui/frame?runtime=<id>&module=<key>`, a page of
+2. `host.js` fetches the HTML and CSS as before, and with them the frame
+   document from `/build-ui/frame?runtime=<id>&module=<key>`, a page of
    `BuildUiAction` with the same Overall/Read check as the content endpoint.
+   It adds `<iframe sandbox="allow-scripts" title="<form name>">` to the
+   shadow root with that document as `srcdoc`, so the frame inherits the
+   page's Content Security Policy (WebKit, below, is why it is not `src`).
 3. The frame endpoint checks that the runtime exists and the module key is
    in `ContentStore`, mints a token and answers a document with no form code:
    a boot script tag and the module's one-time URL in `data-module`. It sends
@@ -574,6 +591,39 @@ From the browser suite against Jenkins:
   runs. `SandboxTest` accepts any refusal for traversal paths and checks
   that no content leaks.
 
+### Measured per engine (CI, 2026-10-27)
+
+From `js/lab/sandbox-probe.mjs` in Chromium 141.0.7390.37, Firefox 142.0.1
+and WebKit 26.0 (Playwright 1.56.1), CI runs 40527059994 and 40537492497.
+The probe serves Jenkins's header with its `report-uri`, Jenkins's session
+cookie (`HttpOnly; SameSite=Lax`) and one cookie scripts may read, and
+compares three sandboxed frames: a document with its own Jenkins policy
+(what the plugin served until 2026-10-27), the same with the origin named
+in `script-src` instead of `'self'`, and the same markup as `srcdoc`.
+
+- WebKit ran no script at all in the first frame: "Refused to load
+  http://127.0.0.1:4330/classic.js because it does not appear in the
+  script-src directive of the Content Security Policy." Read with the
+  second frame, this means WebKit matches `'self'` in a sandboxed
+  document's own policy against its opaque origin, so it matches nothing. With the origin named, and in the `srcdoc` frame,
+  scripts ran. Chromium and Firefox ran scripts in all three frames.
+- In every engine and every frame that ran: `self.origin` is `"null"`;
+  inline scripts, `eval` and `blob:` imports are blocked; a module script
+  without `Access-Control-Allow-Origin` does not run, one with it does;
+  `parent.document` throws `SecurityError`; a `MessagePort` sent with the
+  first message works.
+- `document.cookie` throws `SecurityError` in Chromium and Firefox. In the
+  WebKit `srcdoc` frame it returns `""` while the page holds a readable
+  cookie; in the WebKit frame with its own document it throws.
+- Requests from the frame: Chromium and Firefox sent no cookie with any of
+  them. WebKit sent the `SameSite=Lax` session cookie with requests made
+  without CORS (a classic script, an image) and none with module scripts;
+  its `fetch` calls sent no request at all.
+- Before the change, every sandbox test failed in WebKit (CI run
+  40517301536): the frame loaded with an empty body and never answered the
+  host. With `srcdoc`, all ten pass in all three engines (CI run
+  40551802902: 135 browser tests passed on 2.580.1, 45 on 2.541.1).
+
 ### Limits
 
 - The code can draw misleading content inside its own frame.
@@ -581,9 +631,14 @@ From the browser suite against Jenkins:
   put that into the submitted value, which reaches a build the Jenkinsfile
   author controls.
 - Channels outside CSP, such as WebRTC, are not tested.
-- Firefox and Safari are not tested; the host's theme copy relies on the
-  computed style listing custom properties, which we have seen only in
-  Chromium.
+- In WebKit the code can send GET requests to Jenkins with the viewer's
+  session cookie, through an image or a classic script, without reading the
+  answer. Jenkins core changes state only on POST with a crumb, which the
+  frame cannot read; that every plugin's GET endpoints are free of side
+  effects is an Assumption.
+- Safari itself is not tested, only Playwright's WebKit build. The theme
+  test passes in all three engines, so their computed styles list custom
+  properties.
 - Every frame costs a request to the protected endpoint and one per script.
 
 ## 14. Forms from the repository and single-file forms (Tested)
