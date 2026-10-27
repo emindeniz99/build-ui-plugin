@@ -99,7 +99,13 @@ export async function watch(page) {
   // Jenkins answers the build form page itself with 405 on purpose ("not a build trigger").
   const expected = /status of 405 \(Method Not Allowed\)/;
   page.on('console', (m) => { if (m.type() === 'error' && !expected.test(m.text())) problems.push(m.text()); });
-  page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
+  // Leaving the page cancels Jenkins's own requests (the build history poll), and WebKit
+  // reports each cancelled fetch as an unhandled "TypeError: Load failed". Only that error,
+  // and only between a main-frame navigation's start and its commit, is not a problem.
+  let leaving = false;
+  page.on('request', (r) => { if (r.isNavigationRequest() && r.frame() === page.mainFrame()) leaving = true; });
+  page.on('framenavigated', (f) => { if (f === page.mainFrame()) leaving = false; });
+  page.on('pageerror', (e) => { if (!(leaving && e.message === 'TypeError: Load failed')) problems.push(`pageerror: ${e.message}`); });
   await page.addInitScript(() => {
     document.addEventListener('securitypolicyviolation', (e) => console.error(`CSP ${e.violatedDirective} ${e.blockedURI}`));
   });
