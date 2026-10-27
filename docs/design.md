@@ -588,8 +588,8 @@ From the browser suite against Jenkins:
 
 ## 14. Forms from the repository and single-file forms (Tested)
 
-`FormFromTest` (JenkinsRule, 15 tests), `SingleFileHtmlTest` (11 plain unit
-tests), six checker tests and `js/e2e/form-from.spec.mjs` (Chromium) cover
+`FormFromTest` (JenkinsRule, 15 tests), `SingleFileHtmlTest` (15 plain unit
+tests), eleven checker tests and `js/e2e/form-from.spec.mjs` (Chromium) cover
 this section, all on Jenkins 2.541.1 with local Git repositories.
 
 The problem, in the owner's words: "I changed the HTML in the Jenkinsfile
@@ -668,12 +668,27 @@ the controller splits `html` or `form.html`. The content of one
 `<script type="module">` becomes the module, every `<style>` joins the CSS
 after `css` or `form.css`, and the rest stays HTML. The scan follows HTML's
 rule that a script ends at the first `</script` and a style at the first
-`</style`, skips comments, and checks start tags for `on*=` attributes with
-the checker's rule. It refuses a classic script, any `src`, two module
+`</style`, and reads the rest as the HTML tokenizer does: a comment also ends at `<!-->`, `<!--->` and `--!>`; only
+`<` before an ASCII letter starts a tag; a quoted value may hold `>`; `/`
+and the end of a quoted value separate attributes; only tab, line feed,
+form feed, carriage return and space count as space. The HTML left after
+the split, which is what the browser gets, is then checked for `on*=`
+attributes on start tags, the checker's rule. `textarea`, `title`,
+`noscript`, `iframe`, `noembed`, `noframes` and `xmp` hold text in HTML
+but markup inside SVG or MathML, so the check reads their content as
+markup and refuses a tag or comment that contains their end tag, where the
+two readings part. A `<` right before a script or style is refused too:
+taking the element out would join it to the text after it. A review found
+the earlier scan let `<!--><img onerror=...>-->` and `<img/onerror=...>`
+through (2026-10-27). Tested once by hand, not in a suite: set as
+`innerHTML` in Chromium from Playwright 1.56.1, every input the tests refuse
+for a handler gave an element a live `on*` attribute, and the inputs they
+allow gave none. It refuses a classic script, any `src`, two module
 scripts, a module script next to `module` or `form.mjs`, an inline handler
-and an unclosed element. Every scan moves forward, so the time is linear in
-the text; `SingleFileHtmlTest` runs inputs that make a backtracking regex
-rescan from every `<`. Reason for the split, a design choice and not
+and an unclosed element. Every scan moves forward, and each text element's
+end tag is searched for once, so the time is linear in the text;
+`SingleFileHtmlTest` and the checker test run inputs that make a
+backtracking regex rescan from every `<`. Reason for the split, a design choice and not
 measured here: no browser ships HTML modules, and Jenkins's CSP blocks
 inline scripts, so the module must come from its own URL.
 

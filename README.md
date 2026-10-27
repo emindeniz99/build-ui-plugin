@@ -31,9 +31,9 @@ frontend build step.
 0.1.0 is ready to release (see [`CHANGELOG.md`](./CHANGELOG.md)) and has no
 tag yet; [Release](#release) lists the steps. Every test passed on Jenkins 2.541.1 and 2.580.1 on 2026-10-27.
 The project has 101 JenkinsRule
-tests, 29 plain unit tests, 45 browser tests (Chromium) under enforced CSP,
-43 Node tests of the checker, the preview and the types, and 3 browser tests
-of the preview (counted 2026-10-27). Maven reports 139 Java tests: our 130
+tests, 33 plain unit tests, 45 browser tests (Chromium) under enforced CSP,
+48 Node tests of the checker, the preview and the types, and 3 browser tests
+of the preview (counted 2026-10-27). Maven reports 143 Java tests: our 134
 plus 9 that the plugin parent generates, one of them skipped. CI also
 runs the browser tests in Firefox and WebKit on 2.580.1. The reference
 form is [`examples/reference.Jenkinsfile`](./examples/reference.Jenkinsfile)
@@ -116,7 +116,12 @@ The controller refuses the form, with the reason, when the text has:
   would run under Jenkins's CSP, and a form loads no other code;
 - more than one module script, or a module script and a `module` field;
 - an inline event handler such as `onclick=`, which CSP blocks; attach
-  handlers in the module.
+  handlers in the module. The controller reads tags and comments as a
+  browser does, so `<img/onerror=...>` and a handler after `<!-->` count;
+- markup a browser reads differently from the check: a `<` right before a
+  `<script>` or `<style>`, or the end tag of a `<textarea>`, `<title>`,
+  `<noscript>`, `<iframe>`, `<noembed>`, `<noframes>` or `<xmp>` inside a
+  tag or comment.
 
 A script ends at the first `</script`, and a style at the first `</style`,
 as in any HTML page.

@@ -85,6 +85,64 @@ class SingleFileHtmlTest {
         SingleFileHtml.split("<p>use onclick= in the module</p><script type=module>el.onclick = go</script>", "html");
     }
 
+    /** An {@code onerror} the browser runs, which the check must find however the markup around it is written. */
+    static final String RUNS = "<img src=x onerror=alert(1)>";
+
+    private static void assertHandlerRefused(String html) {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> SingleFileHtml.split(html, "html"), html);
+        assertEquals("html uses the inline handler onerror=; Jenkins's CSP blocks it, attach the handler in the module", e.getMessage(), html);
+    }
+
+    @Test
+    void aCommentEndsWhereTheBrowserEndsItSoNoHandlerHidesBehindIt() {
+        // Browsers end a comment at "<!-->", "<!--->" and "--!>", not only at "-->".
+        assertHandlerRefused("<!-->" + RUNS + "-->");
+        assertHandlerRefused("<!--->" + RUNS + "-->");
+        assertHandlerRefused("<!-- old --!>" + RUNS + "-->");
+        // A handler inside a real comment never runs.
+        assertEquals("<!-- " + RUNS + " --><!----><p>x</p>", SingleFileHtml.split("<!-- " + RUNS + " --><!----><p>x</p>", "html").html());
+    }
+
+    @Test
+    void attributesAreSeparatedAndQuotedAsTheBrowserReadsThem() {
+        // A '/' separates attributes like a space, and so does the end of a quoted value.
+        assertHandlerRefused("<img/onerror=alert(1) src=x>");
+        assertHandlerRefused("<img src=\"x\"onerror=alert(1)>");
+        // A '>' inside a quoted value does not end the tag.
+        assertHandlerRefused("<img alt=\">\" src=x onerror=alert(1)>");
+        assertHandlerRefused("<p title='>'></p>" + RUNS);
+        // A '<' that starts no tag is text, so the tag after it counts.
+        assertHandlerRefused("<3 " + RUNS);
+        // A vertical tab is no space in HTML: this is one tag named a\u000btitle="x, and the img after it is a tag.
+        assertHandlerRefused("<a\u000btitle=\"x>" + RUNS + "\">");
+        // A handler's name inside a value is not an attribute.
+        SingleFileHtml.split("<p title=\"onclick=go()\" data-x='a onclick=b'>x</p>", "html");
+    }
+
+    @Test
+    void textElementsCannotHideTheirEndTagFromTheCheck() {
+        // HTML reads <textarea> content as text up to </textarea>; inside SVG the same tags are markup.
+        // Here HTML ends the textarea inside the title, and the img after it runs.
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> SingleFileHtml.split(
+                "<textarea><p title=\"</textarea>" + RUNS + "\"></textarea>", "html"));
+        assertTrue(e.getMessage().startsWith("html has </textarea inside a tag or comment"), e.getMessage());
+        assertThrows(IllegalArgumentException.class, () -> SingleFileHtml.split("<noscript><!-- </noscript>" + RUNS + " --></noscript>", "html"));
+        // Taking a style out must not leave such an end tag inside a tag either.
+        assertThrows(IllegalArgumentException.class, () -> SingleFileHtml.split(
+                "<textarea><style></textarea></style><p title=\"</textarea>" + RUNS + "\">", "html"));
+        // Inside SVG a <title> holds markup, and an img there leaves the SVG and runs.
+        assertHandlerRefused("<svg><title>" + RUNS + "</title></svg>");
+        SingleFileHtml.split("<svg><title>Icon</title></svg><textarea>a < b</textarea>", "html");
+    }
+
+    @Test
+    void takingAScriptOutCannotJoinTextIntoANewTag() {
+        // Removing the script would turn "<" + "img ..." into a tag the browser runs.
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> SingleFileHtml.split(
+                "<<script type=module>export default () => {}</script>img src=x onerror=alert(1)>", "html"));
+        assertTrue(e.getMessage().startsWith("html has a '<' right before <script>"), e.getMessage());
+    }
+
     @Test
     void anUnclosedScriptIsAnError() {
         assertThrows(IllegalArgumentException.class, () -> SingleFileHtml.split("<script type=module>export default () => {}", "html"));
@@ -97,9 +155,12 @@ class SingleFileHtmlTest {
         // A regex such as <[a-z][^>]*?\son[a-z]+= rescans to the end from every '<' when no '>' follows.
         String unclosed = "<a  ".repeat(130_000);
         String styles = "<style>p{}</style><b x=1>".repeat(20_000);
+        // Every textarea looks for its end tag; the search must not start over for each one.
+        String textareas = "<textarea></textareax>".repeat(20_000);
         long start = System.nanoTime();
         assertEquals(unclosed, SingleFileHtml.split(unclosed, "html").html());
         assertEquals(20_000 * 4 - 1, SingleFileHtml.split(styles, "html").css().length());
+        assertEquals(textareas, SingleFileHtml.split(textareas, "html").html());
         long millis = (System.nanoTime() - start) / 1_000_000;
         assertTrue(millis < 2_000, millis + " ms");
     }
