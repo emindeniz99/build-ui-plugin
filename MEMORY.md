@@ -87,13 +87,13 @@ section 10.
 - 2026-10-27: WebKit 26 matches CSP `'self'` in a sandboxed document's own policy against its opaque origin: no script runs. srcdoc frames inherit the page's policy and run (js/lab/sandbox-probe.mjs)
 - 2026-10-27: WebKit ignores a report-only CSP without report-uri, and with one it still neither fires securitypolicyviolation nor reports evals; Firefox logs each report-only eval as a console error
 - 2026-10-27: WebKit sends SameSite=Lax cookies with no-CORS requests (images, classic scripts) from a sandboxed frame; Chromium and Firefox do not
-- 2026-10-27: WebKit raises an unhandled "TypeError: Load failed" for a fetch a page navigation cancels (Jenkins's buildHistory poll after Build); watch() ignores it only during a navigation
+- 2026-10-27: WebKit raises an unhandled "TypeError: Load failed" for a fetch a page navigation cancels (Jenkins's buildHistory poll after Build), reported before Playwright sees the navigation; watch() drops it only when a main-frame commit follows within 2 s
 - 2026-10-27: `vendor:check` also enforces host.js's 4 KB gzip budget; long comments in host.js count. Run it after any host.js change
 - 2026-10-27: CI uploads Playwright traces of failed tests (artifact `playwright-traces-<line>`); `actions_get download_workflow_run_artifact` gives a short-lived URL, and the pageError and network events sit in `*-trace.trace` / `*-trace.network`
 
 ## Done
 
-- 2026-10-27: first three-engine CI run fixed: sandboxed forms in WebKit (srcdoc), report-only tests per engine, probes per engine in CI, traces on failure
+- 2026-10-27: first three-engine CI run fixed: sandboxed forms in WebKit (srcdoc), report-only tests per engine, probes per engine in CI, traces on failure; branch run 40551802902 green (135 browser tests on 2.580.1, 45 on 2.541.1)
 - 2026-10-27: four review findings fixed (formFrom trust, single-file handler bypasses in Java and the checker, URL userinfo in gitRefs and formFrom errors, lab server bind); full `mvn verify` on 2.541.1 only
 - 2026-10-27: local preview (`js/preview/`), module types and `typecheck`, `examples/preview-data.json`; 14 Node + 3 browser tests
 - 2026-10-27: Git Parameter parity for gitRefs and the integration matrix with Git Parameter, Active Choices, rename and folder move; fixed glob backtracking and stale formFrom reads after a rename (docs/design.md section 16). Ran on 2.541.1 only

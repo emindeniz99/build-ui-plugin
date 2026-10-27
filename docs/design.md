@@ -621,8 +621,8 @@ in `script-src` instead of `'self'`, and the same markup as `srcdoc`.
   its `fetch` calls sent no request at all.
 - Before the change, every sandbox test failed in WebKit (CI run
   40517301536): the frame loaded with an empty body and never answered the
-  host. With `srcdoc`, all ten pass in all three engines (CI on the
-  `ci/webkit-sandbox` branch, 2026-10-27).
+  host. With `srcdoc`, all ten pass in all three engines (CI run
+  40551802902: 135 browser tests passed on 2.580.1, 45 on 2.541.1).
 
 ### Limits
 
