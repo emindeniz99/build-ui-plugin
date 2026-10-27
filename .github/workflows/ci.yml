@@ -1,26 +1,17 @@
-name: jenkins-ui CI
+name: CI
 
-# Actions are pinned to full commit SHAs (graduation rule, lesson 10). The
+# Actions are pinned to full commit SHAs so a moved tag cannot change
+# what runs. The
 # release age of these SHAs was not checked when they were pinned.
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths:
-      - "**"
-      - ".github/workflows/jenkins-ui-ci.yml"
   pull_request:
-    paths:
-      - "**"
-      - ".github/workflows/jenkins-ui-ci.yml"
 
 permissions:
   contents: read
-
-defaults:
-  run:
-    working-directory: .
 
 jobs:
   plugin:

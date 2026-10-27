@@ -387,7 +387,7 @@ JenkinsRule tests, 8 browser tests).
 
 ## 11. Compatibility and upgrades (Policy)
 
-The plugin follows semantic versioning; a release is a `jenkins-ui-vX.Y.Z` tag.
+The plugin follows semantic versioning; a release is a `vX.Y.Z` tag.
 What each part promises:
 
 | Part | Within a major version | A breaking change |

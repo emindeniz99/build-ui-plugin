@@ -724,29 +724,26 @@ Jenkins* » *Plugins* » *Advanced settings*.
 
 ### Release
 
-Push a tag `jenkins-ui-v<major>.<minor>.<patch>` on a commit of `main`. The
-`jenkins-ui release` workflow builds the plugin at that version, runs its
+Push a tag `v<major>.<minor>.<patch>` on a commit of `main`. The
+`release` workflow builds the plugin at that version, runs its
 tests, and attaches `build-ui.hpi` and its SHA-256 to a GitHub Release with
 `CHANGELOG.md` as the notes. Update `CHANGELOG.md` first. The tag prefix
-lives in `.github/workflows/jenkins-ui-release.yml`.
+lives in `.github/workflows/release.yml`.
 
 No release has been cut yet (2026-10-27), and the three workflows have never
 run on GitHub. Before the first tag:
 
 1. Check that Actions is enabled and the repository's default workflow token
    is read-only.
-2. Read the three `.github/workflows/jenkins-ui-*.yml` files: their paths,
-   working directories and the gitleaks path list must point at this
-   repository's layout.
-3. Let `jenkins-ui CI` and `jenkins-ui security` pass on `main`, Firefox and
+2. Let `CI` and `security` pass on `main`, Firefox and
    WebKit included.
-4. Push the 0.1.0 tag and check that the Release carries `build-ui.hpi` and
+3. Push the `v0.1.0` tag and check that the Release carries `build-ui.hpi` and
    its checksum.
 
-`jenkins-ui security` lints the workflows with zizmor and scans the
-project's history for secrets with gitleaks. Both pass locally: zizmor 1.31.1
-found nothing in the three workflows, and gitleaks v8.30.1 found no leaks in
-54 commits (2026-10-27).
+`security` lints the workflows with zizmor and scans the repository's
+history for secrets with gitleaks. Both pass locally: zizmor 1.31.1 found
+nothing in the three workflows, and gitleaks v8.30.1 found no leaks in the
+91 commits of this repository or in its files (2026-10-27).
 
 ## Notes / learnings
 

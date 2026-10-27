@@ -16,7 +16,7 @@ You need Java 17 or newer, Maven 3.9, Node 24.22.1 and pnpm 12.14.0
 mvn verify
 
 # Plugin on the current LTS line; CI keeps the current values in
-# .github/workflows/jenkins-ui-ci.yml
+# .github/workflows/ci.yml
 mvn verify -Djenkins.baseline=2.580 -Djenkins.version=2.580.1 -Dbom.version=7237.v5071b_f4589f1
 
 # JS: runtime bundles, checker, preview and type tests

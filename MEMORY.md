@@ -36,7 +36,7 @@ only in CI, never run locally (only Chromium was installed). Open items:
 - 2026-10-23: solid2-html not planned — lost the comparison (design.md section 7)
 - 2026-10-23: gitRefs takes a job, never a URL — no SSRF; needs Item/Build
 - 2026-10-23: runtime IDs and schema keywords live in contract.json, read by Java and the checker
-- 2026-10-23: release by tag jenkins-ui-v<semver>; the .hpi goes to GitHub Releases, never git
+- 2026-10-23: release by tag v<semver> (jenkins-ui-v<semver> while in the monorepo); the .hpi goes to GitHub Releases, never git
 - 2026-10-23: ArgoCD servers are admin config (UI or JCasC); the browser names an app, never a server URL; cache key is URL + credentials + app
 - 2026-10-23: x-git-ref checks run on every queued build (defaults included) in RefGuard, a QueueTaskDispatcher that lists refs on a pool thread and cancels the item; never in QueueGuard — review finding: Git I/O under the queue lock stalled every job
 - 2026-10-23: Dependabot cooldowns: minor and patch 7 days, matching pnpm minimumReleaseAge; major 30 days

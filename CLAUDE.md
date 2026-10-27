@@ -24,6 +24,3 @@ The rules agents break most often:
 - Use generic names (`example.com`) in examples and tests.
 - Report a skipped or failing test as skipped or failing. Do not call the
   work done around it.
-
-If you find this folder inside a larger repository whose own agent rules set
-a different commit scope, follow that repository's rules there.

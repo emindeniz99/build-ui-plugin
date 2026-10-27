@@ -1,12 +1,12 @@
-name: jenkins-ui release
+name: release
 
-# Push a tag named jenkins-ui-v<version> (for example jenkins-ui-v0.1.0) on a
+# Push a tag named v<version> (for example v0.1.0) on a
 # commit of main. The job builds the plugin at that version, runs its tests,
 # and attaches build-ui.hpi to a GitHub Release. The .hpi never goes into git.
 
 on:
   push:
-    tags: ["jenkins-ui-v*"]
+    tags: ["v*"]
 
 permissions:
   contents: read
@@ -16,9 +16,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the GitHub Release
-    defaults:
-      run:
-        working-directory: .
     env:
       TAG: ${{ github.ref_name }}
     steps:
@@ -31,9 +28,9 @@ jobs:
           java-version: "17"
       - name: Read the version from the tag
         run: |
-          version="${TAG#jenkins-ui-v}"
+          version="${TAG#v}"
           if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "tag $TAG is not jenkins-ui-v<major>.<minor>.<patch>" >&2
+            echo "tag $TAG is not v<major>.<minor>.<patch>" >&2
             exit 1
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
