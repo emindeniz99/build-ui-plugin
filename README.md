@@ -29,8 +29,8 @@ frontend build step.
 ## Status
 
 0.1.0 is ready to release (see [`CHANGELOG.md`](./CHANGELOG.md)). The first
-tag comes after graduation, from the standalone repository. Tested on Jenkins 2.541.1 and 2.580.1; `formFrom` and
-single-file forms so far only on 2.541.1. The project has 85 JenkinsRule
+tag comes after graduation, from the standalone repository. Every test passed on Jenkins 2.541.1 and 2.580.1 on 2026-10-27.
+The project has 85 JenkinsRule
 tests, 29 plain unit tests, 45 browser tests (Chromium) under enforced CSP
 and 28 checker tests (counted 2026-10-27). CI also
 runs the browser tests in Firefox and WebKit on 2.580.1. The reference

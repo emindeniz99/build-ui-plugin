@@ -360,8 +360,8 @@ JenkinsRule tests, 8 browser tests).
 
 ## 10. Not built yet
 
-- Sandboxed forms in Firefox and WebKit, and on Jenkins 2.580.1: the sandbox
-  tests have run only in Chromium on 2.541.1.
+- Sandboxed forms in Firefox and WebKit: the sandbox tests have run only in
+  Chromium (on 2.541.1 and 2.580.1).
 - Exfiltration from a sandboxed frame through channels Jenkins's CSP does
   not cover (WebRTC, DNS prefetch): not tested, not claimed.
 - Live theme changes in a sandboxed frame: the host copies the theme once,
@@ -374,9 +374,9 @@ JenkinsRule tests, 8 browser tests).
   graduation (owner, 2026-10-27); README » Release lists the steps.
 - Firefox and WebKit runs: CI runs them on the current LTS line, but this
   container has only Chromium, so no Firefox or WebKit run has happened yet.
-- `formFrom` with an SCM other than Git, with a remote that needs
-  credentials, and on Jenkins 2.580.1: the tests use local Git repositories
-  on 2.541.1 only (section 14).
+- `formFrom` with an SCM other than Git, or with a remote that needs
+  credentials: the tests use local Git repositories without credentials
+  (on 2.541.1 and 2.580.1; section 14).
 - `uiPanel` keeps its old `html` rule: a `<script>` there is a checker error,
   and the controller does not split a panel's `html`.
 
@@ -499,7 +499,7 @@ Jenkins.
 ## 13. Sandboxed forms (Tested)
 
 `SandboxTest` (JenkinsRule) covers the endpoints; `js/e2e/sandbox.spec.mjs`
-(Chromium, Jenkins 2.541.1) covers the browser side.
+(Chromium, Jenkins 2.541.1 and 2.580.1) covers the browser side.
 
 ### Mechanism
 

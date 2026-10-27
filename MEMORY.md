@@ -5,15 +5,13 @@ significant work; prune past ~100 lines. Details: `.claude/skills/memory/SKILL.m
 
 ## Now
 
-Feature-complete for 0.1.0 and tested on 2.541.1 and 2.580.1 (47 JenkinsRule,
-18 plain unit, 26 browser, 20 checker tests; Maven counts 74 Java tests: our 65
-plus 9 from the plugin parent, 1 skipped): parameter, `input` step, `uiPanel`,
-`schema-form`, `jenkinsRuns`, `gitRefs`, `argoCdApp`, optional approval, optional sandboxed forms, the Jenkinsfile
-checker, accessibility checks, runtimes `alpine3-csp`, and `alpine3`/`vue3`
-behind `allowEvalRuntimes` (2.541.1 only so far: +9 JenkinsRule, +7 browser,
-+1 checker test). 2026-10-27: `formFrom` and single-file html, 2.541.1 only
-(+14 JenkinsRule, +11 unit, +2 browser, +6 checker; totals now 85 JenkinsRule,
-29 unit, 45 browser, 28 checker). Release and security workflows ready; the first tag comes after
+Feature-complete for 0.1.0. On 2026-10-27 every test passed on 2.541.1 and
+2.580.1 (85 JenkinsRule, 29 plain unit, 45 browser in Chromium, 28 checker;
+Maven counts 123: our 114 plus 9 from the plugin parent, 1 skipped):
+parameter, `input` step, `uiPanel`, `schema-form`, `jenkinsRuns`, `gitRefs`,
+`argoCdApp`, optional approval, optional sandboxed forms, `formFrom` and
+single-file html, the Jenkinsfile checker, accessibility checks, runtimes
+`alpine3-csp`, and `alpine3`/`vue3` behind `allowEvalRuntimes`. Release and security workflows ready; the first tag comes after
 graduation (owner, 2026-10-27). GitHub Actions has run no push-triggered workflow in this repo since
 2026-06-25 and the manual jenkins-ui CI run stayed queued, so neither
 workflow has run on GitHub yet. Firefox and WebKit legs exist only in CI,
