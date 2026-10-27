@@ -51,13 +51,10 @@ only in CI, never run locally (only Chromium was installed). Open items:
 - 2026-10-27: TypeScript 6.0.3 for typecheck, not 7.0.2 — one package without dependencies or install scripts; 7.0.2 pulls a native binary per platform. `strict: false`: TS 6's strict default fails every example module
 - 2026-10-27: gitRefs `repository` is a glob of the job's remote URLs (Git Parameter matches URLs too, by regex); `search` is a case-insensitive substring; paging adds `offset` and a `total` object, shape otherwise unchanged; `x-git-repository` narrows `x-git-ref`
 - 2026-10-27: where Git Parameter differs on purpose (tag path tail match, rc before release, `origin/` prefix, first repository only, listSize), gitRefs keeps its behaviour and GitParameterParityTest asserts the difference
+- 2026-10-27: review fixes: formFrom in a multibranch job reads the revision `getTrustedRevision` picks, as SCMBinder does for the Jenkinsfile; gitRefs drops `user:password@` from scheme URLs in answers, errors and globs (scp-like `git@host:x` stays); single-file html is read as the HTML tokenizer reads it and the markup left after the split is checked
 
 ## Learnings
 
-- 2026-10-22: Preact renders arrays on undefined custom elements as attributes and the value is lost; wait for `customElements.whenDefined` first
-- 2026-10-23: Java 21 regex runs `^(a+)+$` in linear time; use `^(.*?,){14}P` to test a ReDoS guard
-- 2026-10-23: `.jenkins-input` overrides the `hidden` attribute; also set `style.display`
-- 2026-10-23: the build form page answers 405 on purpose; filter it from browser console checks
 - 2026-10-23: `hpi:run` loads test-scope plugins (Pipeline) and serves `src/main/webapp` live; give each Jenkins line its own `-DJENKINS_HOME`
 - 2026-10-23: pnpm's isolated layout breaks a browser import map over node_modules; the lab uses `nodeLinker: hoisted`
 - 2026-10-23: input step console shows "Input requested", not the message, when it has parameters
@@ -88,13 +85,16 @@ only in CI, never run locally (only Chromium was installed). Open items:
 - 2026-10-27: caches keyed by job full name need an ItemListener (onLocationChanged, onDeleted); fireLocationChange also visits every item inside a moved folder
 - 2026-10-27: a cold JenkinsRule form page took 7.6 s; a test that must stay inside a 10 s cache window warms the pages first and times itself
 - 2026-10-27: `git commit --only` refuses untracked and new files (`pathspec did not match`); stage them with git add
+- 2026-10-27: scm-api's tests jar (BOM classifier `tests`) has MockSCMSource but no SCMFileSystem builder for it; FormFromTest adds one with @TestExtension. Trust needs `MockRepositoryFlags.TRUST_AWARE` on the repository and `MockChangeRequestFlags.UNTRUSTED` on the change request
+- 2026-10-27: browsers end a comment at `<!-->`, `<!--->` and `--!>`, split attributes at `/` and after a closing quote, and count only tab, LF, FF, CR and space as space (checked with innerHTML in Chromium)
+- 2026-10-27: in Node, `rest.endsWith()` or `rest[i]` on a string built with `+=` flattens it each call; once per element made splitHtml quadratic (40 000 styles: 3.5 s)
+- 2026-10-27: `ExtensionList.add(int, T)` ignores the index; a test that needs its own extension first removes the others
 
 ## Done
 
+- 2026-10-27: four review findings fixed (formFrom trust, single-file handler bypasses in Java and the checker, URL userinfo in gitRefs and formFrom errors, lab server bind); full `mvn verify` on 2.541.1 only
 - 2026-10-27: local preview (`js/preview/`), module types and `typecheck`, `examples/preview-data.json`; 14 Node + 3 browser tests
 - 2026-10-27: Git Parameter parity for gitRefs and the integration matrix with Git Parameter, Active Choices, rename and folder move; fixed glob backtracking and stale formFrom reads after a rename (docs/design.md section 16). Ran on 2.541.1 only
 - 2026-10-27: `formFrom` (Pipeline from SCM, multibranch) and single-file html, checker rules, `examples/form-from/`
 - 2026-10-23: sandboxed forms (iframe, token endpoint, MessageChannel protocol), 15 JenkinsRule + 10 browser + 1 checker tests on 2.541.1
 - 2026-10-23: argoCdApp provider, JCasC, accessibility suite, example Jenkinsfiles under e2e, full suites green on 2.541.1 and 2.580.1
-- 2026-10-23: checker CLI, Preact vs Solid 2 comparison, gitRefs provider, release workflow and CHANGELOG for 0.1.0
-- 2026-10-23: renderer research, Phase 0 and the design: `docs/design.md` sections 6 to 9
