@@ -167,7 +167,10 @@ public class GitRefsProvider extends DataProvider implements RefLookup {
         }
         if (repository != null) {
             Globs.Glob glob = Globs.compile(repository, "repository");
-            remotes.removeIf(remote -> remote.getUrl() == null || !glob.matches(remote.getUrl()));
+            remotes.removeIf(remote -> {
+                String url = remote.getUrl();
+                return url == null || !glob.matches(url);
+            });
             if (remotes.isEmpty()) {
                 throw new IllegalArgumentException("no Git repository of " + job.getFullName() + " matches '" + repository + "'");
             }
