@@ -83,6 +83,16 @@ test('an x-git-ref kind the controller does not know is an error', async () => {
   ]);
 });
 
+test('x-git-repository follows the controller: a short glob, only next to x-git-ref', async () => {
+  // Schema.check refuses these when the job is configured, so the checker must not report them clean.
+  const p = errors(await checkSource(`uiParameter(name: 'C', module: 'export default () => {}',
+    schema: '{"type":"object","properties":{"a":{"type":"string","x-git-ref":"tag","x-git-repository":"*/app.git"},"b":{"type":"string","x-git-repository":"*/app.git"},"c":{"type":"string","x-git-ref":"tag","x-git-repository":""}}}')`));
+  assert.deepEqual(p.map((x) => x.message), [
+    "uiParameter 'C': schema at /properties/b: x-git-repository needs x-git-ref next to it",
+    "uiParameter 'C': schema at /properties/c: x-git-repository must be a glob of a repository URL, 1 to 100 characters",
+  ]);
+});
+
 test('bad JSON in defaultJson and uiPanel data is reported with the field name', async () => {
   const p = errors(await checkSource(`
     uiParameter(name: 'C', module: 'export default () => {}', defaultJson: '{branch: main}')

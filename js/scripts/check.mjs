@@ -174,6 +174,13 @@ export function checkSchema(schema, at, report) {
     if (key === 'x-git-ref' && value !== true && !['branch', 'tag', 'any'].includes(value)) {
       report('error', `${where}: x-git-ref must be true, "branch", "tag" or "any"`);
     }
+    if (key === 'x-git-repository') {
+      if (typeof value !== 'string' || value.length === 0 || value.length > 100) {
+        report('error', `${where}: x-git-repository must be a glob of a repository URL, 1 to 100 characters`);
+      } else if (!('x-git-ref' in schema)) {
+        report('error', `${where}: x-git-repository needs x-git-ref next to it`);
+      }
+    }
     if (contract.schemaAnnotations.includes(key) || key.startsWith('x-')) continue;
     if (!contract.schemaValidations.includes(key)) {
       report('error', `${where}: keyword '${key}' is not supported; supported: ${contract.schemaValidations.join(', ')}`);
