@@ -18,6 +18,18 @@ The first release. It needs Jenkins 2.541.1 or newer and Java 17.
   (`input parameters: [uiParameter(...)]`), and as panels on the build page
   (`uiPanel` step).
 - Two forms on one page share one download of their runtime.
+- Single-file forms: `html` may hold the whole form. The controller splits
+  one `<script type="module">` into the module and every `<style>` into the
+  CSS, and refuses classic or `src` scripts, two modules and inline event
+  handlers with the reason.
+- `formFrom: '<folder>'` keeps the form in the repository (`form.mjs`,
+  `form.html`, `form.css`, `schema.json`, `default.json`, all optional).
+  Jenkins reads the folder from the branch head of a multibranch branch job
+  or a *Pipeline script from SCM* job, through the SCM API on the
+  controller, so a push shows up on the next page load after a 10-second
+  cache, without a build. Values are validated against the committed
+  `schema.json`. Other job types and the `input` step show the reason and the
+  JSON field.
 
 ### Data providers
 
@@ -42,8 +54,8 @@ The first release. It needs Jenkins 2.541.1 or newer and Java 17.
   a `schema-form` form and the error fallback; forms work with the keyboard, typing "/" included; colors follow
   the Jenkins theme and meet 4.5:1 contrast.
 - A Jenkinsfile checker: `pnpm --dir projects/jenkins-ui/js check <file>`.
-- Examples: a reference form, parallel environment deploys and a release
-  form, all run by the browser test suite.
+- Examples: a reference form, parallel environment deploys, a release form
+  and a `formFrom` folder, all run by the browser test suite.
 
 ### Runtimes that need eval (optional)
 

@@ -11,7 +11,9 @@ plus 9 from the plugin parent, 1 skipped): parameter, `input` step, `uiPanel`,
 `schema-form`, `jenkinsRuns`, `gitRefs`, `argoCdApp`, optional approval, optional sandboxed forms, the Jenkinsfile
 checker, accessibility checks, runtimes `alpine3-csp`, and `alpine3`/`vue3`
 behind `allowEvalRuntimes` (2.541.1 only so far: +9 JenkinsRule, +7 browser,
-+1 checker test). Release and security workflows ready; the first tag comes after
++1 checker test). 2026-10-27: `formFrom` and single-file html, 2.541.1 only
+(+14 JenkinsRule, +11 unit, +2 browser, +6 checker; totals now 85 JenkinsRule,
+29 unit, 45 browser, 28 checker). Release and security workflows ready; the first tag comes after
 graduation (owner, 2026-10-27). GitHub Actions has run no push-triggered workflow in this repo since
 2026-06-25 and the manual jenkins-ui CI run stayed queued, so neither
 workflow has run on GitHub yet. Firefox and WebKit legs exist only in CI,
@@ -40,6 +42,9 @@ never run locally (only Chromium is installed here). Open items:
 - 2026-10-23: sandbox = isolated `<iframe sandbox="allow-scripts">`, not DOM mirroring (owner); opt-in per form plus admin `sandboxAll`, off by default
 - 2026-10-23: sandboxed module loads through a one-time token (128 bits, single use, 60 s, 10 000 max) from an unprotected action with CORS `*`; the protected frame endpoint does the Overall/Read check
 - 2026-10-23: approval text marks sandboxed code; a sandbox-only approval does not cover the same code unsandboxed, a page approval covers the sandbox
+- 2026-10-27: `formFrom` reads the form folder from the branch head through SCMFileSystem (owner) — inline forms change only after a build; only multibranch branch jobs and Pipeline-from-SCM; others fail loud
+- 2026-10-27: formFrom cache key is job + folder, not revision — SCMFileSystem knows the revision only after opening; 10 s, 256 entries, failures cached, 20 s read bound
+- 2026-10-27: single-file html (owner): the controller splits one module script and styles out of `html`/`form.html`; classic/src scripts and on*= are errors; uiPanel html not split
 
 ## Learnings
 
@@ -73,8 +78,13 @@ never run locally (only Chromium is installed here). Open items:
 - 2026-10-23: axe runs page-level rules (landmark-one-main, page-has-heading-one, region) on an iframe's document; prove axe reaches the frame with a deliberate violation
 - 2026-10-23: Stapler answers 500 for a decoded `..` path segment before plugin code runs
 - 2026-10-23: `pnpm run` (pnpm 12) reconciled the shared node_modules before running a script ("Packages: -26"); run `node scripts/...` directly against a symlinked node_modules
+- 2026-10-27: Pipeline `params` calls getDefaultParameterValue of every job parameter (ParamsVariable.getValue); a throwing default fails the build that defines it
+- 2026-10-27: SCMSource.SourceByItem and SCMHead.HeadByItem (scm-api) find a branch job's source and head; no branch-api dependency needed
+- 2026-10-27: Jelly escape-by-default turns `<` into `&lt;` but leaves `>` and `"` in text; assert on `&lt;script>`
 
 ## Done
+
+- 2026-10-27: `formFrom` (Pipeline from SCM, multibranch) and single-file html, checker rules, `examples/form-from/`
 
 - 2026-10-23: sandboxed forms (iframe, token endpoint, MessageChannel protocol), 15 JenkinsRule + 10 browser + 1 checker tests on 2.541.1
 

@@ -32,6 +32,8 @@ original RFC is issue #94; the design here replaces it where they disagree.
 | Surfaces, in order | Build with Parameters form, then the `input` step, then panels on the build page (`uiPanel` step). All three are built. | The `input` step is the same form problem; build-page panels are a different product. |
 | Declarative no-JS tier | Built as the `schema-form` runtime, which exports `mount` itself, so a job needs no module | It needs nothing from the core and proves the contract with a second consumer. |
 | Data providers | `DataProvider` extension point; ships `jenkinsRuns` (Item/Read), `gitRefs` (Item/Build, optional Git plugin) and `argoCdApp` (admin-configured servers) | No provider takes a URL from the browser: `gitRefs` takes a job, `argoCdApp` a server name and an app name matched against an admin glob. That rules out SSRF through providers, and credentials stay on the controller. |
+| Forms kept in the repository | `formFrom: '<folder>'` reads `form.mjs`, `form.html`, `form.css`, `schema.json` and `default.json` from the head of the job's branch through the SCM API (owner, 2026-10-27); section 14 | Jenkins stores parameter definitions in the job, so an inline form changes only after a build runs the new Jenkinsfile. Reading the branch head shows a push on the next page load. |
+| Single-file form | One `<script type="module">` and any `<style>` in `html` or `form.html` are split out on the controller (owner, 2026-10-27); section 14 | No browser loads HTML modules, and Jenkins's CSP blocks inline scripts. Design choice, not measured here. |
 | Parked | TSX through swc4j, Remote DOM (a worker whose DOM the page mirrors), Web Awesome pack | No current need justifies the cost; the iframe sandbox covers isolation. |
 
 ## 2. Module contract (Tested)
@@ -188,6 +190,10 @@ validates them and nobody approves them. Choices and the facts behind them:
   item blocked while a pool thread lists the refs, then lets it run or
   cancels it. A cancelled build never starts and takes no build number; the
   reason is in the controller log, and a waiting `build` step fails.
+- A `formFrom` schema lives in the repository, so it follows the same rule
+  (section 14): request paths read it on the request thread, `QueueGuard`
+  checks only that the value is JSON, and `RefGuard` validates the value
+  against `schema.json` on a pool thread.
 - Limits: 256 KiB per document, nesting depth 32, 1000 array items, 1000
   object properties, no duplicate keys, patterns up to 256 characters. All
   patterns of one document share a 50 ms budget: a per-string budget let a
@@ -368,6 +374,11 @@ JenkinsRule tests, 8 browser tests).
   graduation (owner, 2026-10-27); README » Release lists the steps.
 - Firefox and WebKit runs: CI runs them on the current LTS line, but this
   container has only Chromium, so no Firefox or WebKit run has happened yet.
+- `formFrom` with an SCM other than Git, with a remote that needs
+  credentials, and on Jenkins 2.580.1: the tests use local Git repositories
+  on 2.541.1 only (section 14).
+- `uiPanel` keeps its old `html` rule: a `<script>` there is a checker error,
+  and the controller does not split a panel's `html`.
 
 ## 11. Compatibility and upgrades (Policy)
 
@@ -569,3 +580,126 @@ From the browser suite against Jenkins:
   computed style listing custom properties, which we have seen only in
   Chromium.
 - Every frame costs a request to the protected endpoint and one per script.
+
+## 14. Forms from the repository and single-file forms (Tested)
+
+`FormFromTest` (JenkinsRule, 14 tests), `SingleFileHtmlTest` (11 plain unit
+tests), six checker tests and `js/e2e/form-from.spec.mjs` (Chromium) cover
+this section, all on Jenkins 2.541.1 with local Git repositories.
+
+The problem, in the owner's words: "I changed the HTML in the Jenkinsfile
+and pushed to git. The UI does not come up with the new version right
+away." Jenkins keeps a job's parameter definitions in its configuration, and
+only a build that runs the new Jenkinsfile replaces them (README, "When a
+changed form shows up"). The owner chose to read the form's files from the
+branch head when *Build with Parameters* opens.
+
+### Mechanism
+
+1. `uiParameter(formFrom: 'forms/deploy')` names a folder relative to the
+   repository root. The setter checks the path: at most 200 characters,
+   segments of `[A-Za-z0-9._-]` joined by `/`, no `.` or `..` segment, no
+   leading or trailing `/`, no `\`. Setting `module`, `html`, `css`,
+   `schema` or `defaultJson` as well fails the definition, in either order.
+   `config.xml` bypasses the setters, so `readResolve` keeps a bad value as
+   an error that the page and every value check report.
+2. `ScmFormReader`, an optional extension that loads with Pipeline and the
+   SCM API, opens an `SCMFileSystem` on the controller:
+   `SCMFileSystem.of(source, head)` for a multibranch branch job, found
+   through `SCMSource.SourceByItem` and `SCMHead.HeadByItem` (no compile
+   dependency on branch-api), and `SCMFileSystem.of(job, scm)` for a job
+   whose definition is `CpsScmFlowDefinition`. Any other job, and the
+   `input` step, gets an error naming what is supported. The job's own
+   credentials stay on the controller; the browser sends nothing that picks
+   the repository, branch or path.
+3. `FormFrom` caches one result per job and folder for 10 seconds, at most
+   256 entries, failures included, so a broken folder does not cost a fetch
+   per page view. Concurrent requests share one read in progress. A read
+   runs on a pool thread under `ACL.SYSTEM2` and a caller waits at most 20
+   seconds; a read that takes longer keeps going and fills the cache for
+   the next request. Files are capped at 512 KiB (`form.mjs`, `form.html`,
+   `form.css`) and 256 KiB (`schema.json`, `default.json`, then the JSON
+   limits of section 5).
+4. The brief asked for a cache per job and resolved head revision. The key
+   is the job and folder instead, and the entry records the revision for the
+   log: `SCMFileSystem` reports a revision only after `of()` has resolved the
+   head (Fact: the API's signatures in scm-api 728), so knowing the revision
+   costs the same open as reading the files.
+5. A page reads the form once per request (a request attribute), so the
+   module, HTML, CSS and schema on one page come from one read. The text
+   then goes into `ContentStore` like inline fields: content-hash URLs,
+   approval, the eval gate and the sandbox work unchanged, and pushed code
+   waits for approval when approval is on.
+6. Values: the form and `buildWithParameters` validate on the request
+   thread against `schema.json` from the same cache. `QueueGuard` runs with
+   the queue lock held, so for a `formFrom` value it checks only that it is
+   JSON; `RefGuard` (section 5) holds the item and validates it against
+   `schema.json` on a pool thread, then lets it run or cancels it.
+7. Defaults come from `default.json`. Without a request (timers, the `build`
+   step, `params` in a running build) the definition finds its job by
+   scanning jobs once for the property that holds it, then reads on the
+   caller's thread with the 20-second bound. When the folder cannot be read,
+   the getter throws, so the build that wanted a default fails with the
+   reason instead of starting with another value.
+
+Single-file form (`SingleFileHtml`): before anything reaches `ContentStore`,
+the controller splits `html` or `form.html`. The content of one
+`<script type="module">` becomes the module, every `<style>` joins the CSS
+after `css` or `form.css`, and the rest stays HTML. The scan follows HTML's
+rule that a script ends at the first `</script` and a style at the first
+`</style`, skips comments, and checks start tags for `on*=` attributes with
+the checker's rule. It refuses a classic script, any `src`, two module
+scripts, a module script next to `module` or `form.mjs`, an inline handler
+and an unclosed element. Every scan moves forward, so the time is linear in
+the text; `SingleFileHtmlTest` runs inputs that make a backtracking regex
+rescan from every `<`. Reason for the split, a design choice and not
+measured here: no browser ships HTML modules, and Jenkins's CSP blocks
+inline scripts, so the module must come from its own URL.
+
+### Measured
+
+JenkinsRule on Jenkins 2.541.1, Git plugin 5.10.1, scm-api 728, git 2.43.0,
+2026-10-27:
+
+- `GitSCMFileSystem` reads a `file:` repository with the branch spec
+  `*/main` once `hudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true` is
+  set, for both job types.
+- A read after the controller's Git cache exists took 57 ms; a read from the
+  plugin's cache took 17 µs (one run, `FormFromTest`).
+- A Pipeline that reads `params` asks every parameter defined on the job
+  for its default: `ParamsVariable.getValue` called
+  `getDefaultParameterValue` in the build that defined the parameter. An
+  inline Pipeline with `formFrom` therefore fails its defining build with
+  "… is neither", which tells the author at once.
+- With the repository on a server that accepts connections and never
+  answers, a `build` step with `wait: false` returned in under 10 seconds,
+  another job built meanwhile, and the queued item left the queue without
+  starting once the server closed.
+- Browser suite (Chromium, Playwright 1.56.1, `hpi:run`, enforced CSP): after
+  a commit to `form.html`, reloading *Build with Parameters* every 2 seconds
+  showed the new markup with no build in between; the whole test, setup
+  included, took between 12.7 s and 18.2 s in three runs. The example's single
+  `form.html` rendered with its `<style>` applied and no CSP violation.
+- In jenkins-core 2.541.1 the classes that call `getDefaultParameterValue`
+  are the parameter definitions, `hudson.cli.BuildCommand` and
+  `jenkins.model.ParameterizedJobMixIn`, which calls it before it queues
+  (Fact: bytecode search). No queue class calls it.
+
+### Limits
+
+- Supported jobs: multibranch branch jobs and *Pipeline script from SCM*.
+  Inline Pipeline scripts, freestyle jobs and the `input` step show the
+  error and the JSON field, and refuse values.
+- A push shows up when the 10-second entry expires, not at once.
+- A read happens on the request thread for page views and form submits,
+  and on the caller's thread for defaults without a request, each bounded
+  by 20 seconds. A `build` step that needs a default blocks its Pipeline's
+  CPS thread for at most that long.
+- `job/<name>/api/json` exports the default. If the folder cannot be read,
+  the getter throws and that export drops the parameter (section 5 measured
+  that a throwing getter drops it).
+- A `copyWithDefaultValue` copy keeps `formFrom` and stores the given value
+  as its default. Such a copy is not meant to be saved; `readResolve` would
+  report it as a conflict.
+- Only Git was tried, only `file:` repositories without credentials, only
+  Chromium.
