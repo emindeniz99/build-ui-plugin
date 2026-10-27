@@ -320,6 +320,21 @@ got from this form (or `null`), so a form can show history without parsing
 build descriptions. Only build-ui values come back this way, never passwords
 or other parameter types.
 
+Builds that ran before a job had this form carry `config: null`, so a history
+view such as `examples/parallel-envs.Jenkinsfile` shows them as having no
+build. If those builds wrote what they did into their description, read it as
+a fallback while they are still among the latest runs, and drop the fallback
+once they age out of `limit`:
+
+```js
+// Migration only: older builds recorded their environments in the description.
+const envsOf = (run) =>
+  run.config?.envs ?? run.description?.match(/envs: ([\w,-]+)/)?.[1].split(',') ?? []
+```
+
+The regular expression depends on what your old builds wrote; the plugin
+does not parse descriptions itself.
+
 `ui.query('gitRefs', { job: ui.job })` returns `{ branches: [...], tags: [...] }`,
 each entry `{ name, sha, repository }`, for the Git repositories that job
 already uses. The browser never sends a URL, so Jenkins only contacts servers
