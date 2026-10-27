@@ -11,7 +11,7 @@ import {
 const readme = readFileSync(new URL('../../README.md', import.meta.url), 'utf8');
 /** The README's alpine3-csp example, wrapped in a pipeline that echoes the value. */
 const alpineExample = `pipeline { agent none
-  parameters { ${readme.match(/```groovy\n(uiParameter\([\s\S]*?alpine3-csp[\s\S]*?)```/)[1]} }
+  parameters { ${readme.match(/```groovy\n(uiParameter\((?:(?!```)[\s\S])*?alpine3-csp[\s\S]*?)```/)[1]} }
   stages { stage('s') { steps { echo "DEPLOY=\${params.DEPLOY}" } } } }`;
 
 async function submit(page, request, job) {
