@@ -37,6 +37,12 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # typescript 7.0.x ships no compiler API, and `pnpm typecheck`
+      # (js/scripts/typecheck.mjs) runs on it; see docs/design.md section 15.
+      # Remove this when a 7.x release exports the compiler API again.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
     cooldown:
       default-days: 7
       semver-major-days: 30
