@@ -42,6 +42,20 @@ BROWSERS=chromium,firefox,webkit pnpm --dir js e2e  # what CI runs on the curren
 `hpi:run` serves `src/main/webapp` live. Give each Jenkins line its own
 `-DJENKINS_HOME` if you switch between them.
 
+Each Playwright version looks for the browser builds it downloads itself. On
+a machine that cannot run `playwright install` but has another Chromium,
+point the `chromium` project at it with `CHROMIUM_EXECUTABLE_PATH`. Both
+browser suites read it, and it changes nothing for Firefox or WebKit:
+
+```bash
+CHROMIUM_EXECUTABLE_PATH=/path/to/chrome-headless-shell pnpm --dir js preview:e2e
+```
+
+A run on another Chromium build does not count as a run on the one CI uses;
+CI's browser job stays the gate. On 2026-10-27 the preview suite passed
+under Playwright 1.64.1 with the Chromium 141 headless shell from
+Playwright 1.56.1.
+
 After you edit anything in `js/runtimes/`, run `pnpm --dir js vendor` and
 commit the rebuilt bundles in `src/main/webapp/runtimes/`. `vendor:check`
 fails CI when a bundle is stale.
