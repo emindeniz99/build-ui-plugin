@@ -163,10 +163,26 @@ class GitRefsProviderTest {
 
     @Test
     void globFiltersAreQuotedSoRegexCharactersMatchLiterally() {
-        assertTrue(GitRefsProvider.glob("release/2026.10", "x").matcher("release/2026.10").matches());
-        assertTrue(!GitRefsProvider.glob("release/2026.10", "x").matcher("release/2026x10").matches());
-        assertTrue(GitRefsProvider.glob("v?.*", "x").matcher("v1.10.0").matches());
-        assertThrows(IllegalArgumentException.class, () -> GitRefsProvider.glob("*".repeat(101), "x"));
+        assertTrue(Globs.compile("release/2026.10", "x").matches("release/2026.10"));
+        assertTrue(!Globs.compile("release/2026.10", "x").matches("release/2026x10"));
+        assertTrue(Globs.compile("v?.*", "x").matches("v1.10.0"));
+        assertTrue(Globs.compile("*", "x").matches(""));
+        assertTrue(Globs.compile("a*b*c", "x").matches("abbbc"));
+        assertTrue(!Globs.compile("a*b*c", "x").matches("abbbcd"));
+        assertTrue(Globs.compile("?", "x").matches("😀"), "? is one character, also outside the BMP");
+        assertTrue(!Globs.compile("v1.*", "x").matches("old/v1.5"), "a glob matches the whole name");
+        assertThrows(IllegalArgumentException.class, () -> Globs.compile("*".repeat(101), "x"));
+    }
+
+    @Test
+    void aGlobCannotMakeTheControllerBacktrack() {
+        // Anyone with Build permission writes the filter, anyone with push access the ref names. Compiled
+        // to a regex, '*a*a*a*a*b' took 20 s against 200 'a's on Java 21, and six stars ran past 100 s.
+        Globs.Glob glob = Globs.compile("*a".repeat(49) + "*b", "x");
+        long start = System.nanoTime();
+        assertTrue(!glob.matches("a".repeat(10_000)));
+        long millis = (System.nanoTime() - start) / 1_000_000;
+        assertTrue(millis < 2_000, "took " + millis + " ms");
     }
 
     @Test

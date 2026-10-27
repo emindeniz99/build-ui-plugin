@@ -56,7 +56,7 @@ public class ArgoCdServer extends AbstractDescribableImpl<ArgoCdServer> {
     }
 
     boolean allows(String app) {
-        return Globs.compile(apps, "apps").matcher(app).matches();
+        return Globs.compile(apps, "apps").matches(app);
     }
 
     @Extension

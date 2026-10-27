@@ -69,8 +69,8 @@ public class GitRefsProvider extends DataProvider implements RefLookup {
     public JsonNode query(JsonNode args) {
         Job<?, ?> job = job(args.path("job").asText(""));
         job.checkPermission(Item.BUILD);
-        Pattern branchGlob = glob(args.path("branches").asText("*"), "branches");
-        Pattern tagGlob = glob(args.path("tags").asText("*"), "tags");
+        Globs.Glob branchGlob = Globs.compile(args.path("branches").asText("*"), "branches");
+        Globs.Glob tagGlob = Globs.compile(args.path("tags").asText("*"), "tags");
         String sort = args.path("sort").asText("name");
         if (!sort.equals("name") && !sort.equals("version-desc")) {
             throw new IllegalArgumentException("sort must be 'name' or 'version-desc'");
@@ -80,9 +80,9 @@ public class GitRefsProvider extends DataProvider implements RefLookup {
         List<Ref> branches = new ArrayList<>();
         List<Ref> tags = new ArrayList<>();
         for (Ref ref : refs(job)) {
-            if (ref.kind().equals("branch") && branchGlob.matcher(ref.name()).matches()) {
+            if (ref.kind().equals("branch") && branchGlob.matches(ref.name())) {
                 branches.add(ref);
-            } else if (ref.kind().equals("tag") && tagGlob.matcher(ref.name()).matches()) {
+            } else if (ref.kind().equals("tag") && tagGlob.matches(ref.name())) {
                 tags.add(ref);
             }
         }
@@ -205,10 +205,6 @@ public class GitRefsProvider extends DataProvider implements RefLookup {
                 CredentialsProvider.lookupCredentialsInItem(StandardCredentials.class, job, ACL.SYSTEM2,
                         URIRequirementBuilder.fromUri(remote.getUrl()).build()),
                 CredentialsMatchers.withId(id));
-    }
-
-    static Pattern glob(String glob, String what) {
-        return Globs.compile(glob, what);
     }
 
     private static final Pattern CHUNK = Pattern.compile("\\d+|\\D+");
