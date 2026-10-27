@@ -1,44 +1,60 @@
 // What runs inside <iframe sandbox="allow-scripts"> when every response carries
-// Jenkins's CSP header? Starts its own server on 127.0.0.1:4330 and drives
-// Chromium. Run: node js/lab/sandbox-probe.mjs
+// Jenkins's CSP header? Starts its own server on 127.0.0.1:4330 and drives one
+// browser engine. Run: node js/lab/sandbox-probe.mjs [chromium|firefox|webkit]
+//
+// Two frames: "jenkins" gets Jenkins's policy as it is; "origin" gets the same
+// policy with script-src naming the origin instead of 'self', to tell a
+// 'self' mismatch apart from any other block.
 import http from 'node:http';
-import { chromium } from '@playwright/test';
+import * as playwright from '@playwright/test';
 
+const engine = process.argv[2] || 'chromium';
 const CSP = "base-uri 'none'; default-src 'self'; form-action 'self'; frame-ancestors 'self'; img-src 'self' data:; script-src 'report-sample' 'self' usage.jenkins.io; style-src 'report-sample' 'self' 'unsafe-inline'";
 const ORIGIN = 'http://127.0.0.1:4330';
+const CSP_ORIGIN = CSP.replace("script-src 'report-sample' 'self'", `script-src 'report-sample' ${ORIGIN}`);
 const seen = [];
 
-const post = (probe) => `parent.postMessage({ probe: ${JSON.stringify(probe)}, ok: true }, '*');`;
+const post = (probe) => `parent.postMessage({ probe: ${JSON.stringify(probe)}, frame: location.search.slice(1), ok: true }, '*');`;
 const FILES = {
   '/parent.html': ['text/html', `<!doctype html><script type="module" src="/parent.mjs"></script>
-<iframe id="f" sandbox="allow-scripts" src="/frame.html"></iframe>`],
+<iframe id="jenkins" sandbox="allow-scripts" src="/frame.html?jenkins"></iframe>
+<iframe id="origin" sandbox="allow-scripts" src="/frame.html?origin"></iframe>`],
   '/parent.mjs': ['text/javascript', `
     window.results = {};
-    addEventListener('message', (e) => { window.results[e.data.probe] = { ok: e.data.ok, detail: e.data.detail, origin: e.origin }; });`],
+    addEventListener('message', (e) => {
+      if (e.data?.probe) window.results[e.data.frame + ' ' + e.data.probe] = { ok: e.data.ok, detail: e.data.detail, origin: e.origin };
+    });
+    // What host.js does: on load, send one message that transfers a MessagePort.
+    for (const f of document.querySelectorAll('iframe')) {
+      f.addEventListener('load', () => {
+        const { port1, port2 } = new MessageChannel();
+        port1.onmessage = (e) => { window.results[f.id + ' message-port'] = { ok: e.data === 'pong' }; };
+        f.contentWindow.postMessage('ping', '*', [port2]);
+      });
+    }`],
   '/frame.html': ['text/html', `<!doctype html>
 <script src="/classic.js"></script>
 <script type="module" src="/module-plain.mjs"></script>
 <script type="module" src="/module-cors.mjs"></script>
-<script>parent.postMessage({ probe: 'inline-script', ok: true }, '*')</script>
+<script>parent.postMessage({ probe: 'inline-script', frame: location.search.slice(1), ok: true }, '*')</script>
 <div id="d">frame</div>`],
   '/classic.js': ['text/javascript', `${post('classic-same-origin')}
-    try { new Function('return 1')(); parent.postMessage({ probe: 'eval', ok: true }, '*'); }
-    catch (e) { parent.postMessage({ probe: 'eval', ok: false, detail: String(e).slice(0, 80) }, '*'); }
-    parent.postMessage({ probe: 'frame-origin', ok: true, detail: String(self.origin) }, '*');
-    try { parent.document.title; parent.postMessage({ probe: 'parent-dom', ok: true }, '*'); }
-    catch (e) { parent.postMessage({ probe: 'parent-dom', ok: false, detail: String(e).slice(0, 60) }, '*'); }
-    try { document.cookie; parent.postMessage({ probe: 'document-cookie', ok: true }, '*'); }
-    catch (e) { parent.postMessage({ probe: 'document-cookie', ok: false, detail: String(e).slice(0, 60) }, '*'); }
+    const frame = location.search.slice(1);
+    const report = (probe, ok, detail) => parent.postMessage({ probe, frame, ok, detail }, '*');
+    addEventListener('message', (e) => { if (e.ports[0]) e.ports[0].postMessage('pong'); });
+    try { new Function('return 1')(); report('eval', true); } catch (e) { report('eval', false, String(e).slice(0, 80)); }
+    report('frame-origin', true, String(self.origin));
+    try { parent.document.title; report('parent-dom', true); } catch (e) { report('parent-dom', false, String(e).slice(0, 60)); }
+    try { document.cookie; report('document-cookie', true); } catch (e) { report('document-cookie', false, String(e).slice(0, 60)); }
     for (const [name, url] of [['fetch-plain', '/data-plain'], ['fetch-cors', '/data-cors']]) {
       fetch(url, { credentials: 'include' }).then(r => r.text())
-        .then(t => parent.postMessage({ probe: name, ok: true, detail: t }, '*'),
-              e => parent.postMessage({ probe: name, ok: false, detail: String(e).slice(0, 60) }, '*'));
+        .then(t => report(name, true, t), e => report(name, false, String(e).slice(0, 60)));
     }
-    const img = new Image(); img.onload = () => parent.postMessage({ probe: 'img-same-origin', ok: true }, '*');
-    img.onerror = () => parent.postMessage({ probe: 'img-same-origin', ok: false }, '*'); img.src = '/pixel.gif';
-    import('/dynamic-cors.mjs').then(() => {}, e => parent.postMessage({ probe: 'dynamic-import-cors', ok: false, detail: String(e).slice(0, 60) }, '*'));
+    const img = new Image(); img.onload = () => report('img-same-origin', true);
+    img.onerror = () => report('img-same-origin', false); img.src = '/pixel.gif';
+    import('/dynamic-cors.mjs').then(() => {}, e => report('dynamic-import-cors', false, String(e).slice(0, 60)));
     const blob = URL.createObjectURL(new Blob([${JSON.stringify(post('blob-import'))}], { type: 'text/javascript' }));
-    import(blob).then(() => {}, e => parent.postMessage({ probe: 'blob-import', ok: false, detail: String(e).slice(0, 60) }, '*'));`],
+    import(blob).then(() => {}, e => report('blob-import', false, String(e).slice(0, 60)));`],
   '/module-plain.mjs': ['text/javascript', post('module-no-cors-header')],
   '/module-cors.mjs': ['text/javascript', post('module-cors-header')],
   '/dynamic-cors.mjs': ['text/javascript', post('dynamic-import-cors')],
@@ -46,30 +62,41 @@ const FILES = {
   '/data-cors': ['text/plain', 'cors'],
   '/pixel.gif': ['image/gif', Buffer.from('R0lGODlhAQABAAAAACw=', 'base64')],
 };
+const PROBES = ['inline-script', 'classic-same-origin', 'module-no-cors-header', 'module-cors-header', 'dynamic-import-cors',
+  'blob-import', 'eval', 'frame-origin', 'parent-dom', 'document-cookie', 'fetch-plain', 'fetch-cors', 'img-same-origin', 'message-port'];
 
 const server = http.createServer((req, res) => {
-  const f = FILES[req.url];
+  const [path, query] = req.url.split('?');
+  const f = FILES[path];
   seen.push(`${req.url} cookie=${req.headers.cookie ? 'yes' : 'no'} origin=${req.headers.origin || '-'}`);
   if (!f) { res.writeHead(404); res.end(); return; }
-  const headers = { 'content-type': f[0], 'content-security-policy': CSP, 'x-frame-options': 'sameorigin' };
-  if (req.url.includes('cors')) headers['access-control-allow-origin'] = '*';
-  if (req.url === '/parent.html') headers['set-cookie'] = 'JSESSIONID=abc; Path=/; HttpOnly';
+  const headers = { 'content-type': f[0], 'content-security-policy': query === 'origin' ? CSP_ORIGIN : CSP, 'x-frame-options': 'sameorigin' };
+  if (path.includes('cors')) headers['access-control-allow-origin'] = '*';
+  if (path === '/parent.html') headers['set-cookie'] = 'JSESSIONID=abc; Path=/; HttpOnly';
   res.writeHead(200, headers);
   res.end(f[1]);
 });
 await new Promise((r) => server.listen(4330, '127.0.0.1', r));
 
-const browser = await chromium.launch();
+const browser = await playwright[engine].launch();
+console.log(`=== sandbox probe: ${engine} ${browser.version()}`);
 const page = await browser.newPage();
 const errors = [];
-page.on('console', (m) => m.type() === 'error' && errors.push(m.text().slice(0, 160)));
+page.on('console', (m) => ['error', 'warning'].includes(m.type()) && errors.push(`${m.type()}: ${m.text().replace(/\s+/g, ' ').slice(0, 200)}`));
 await page.goto(`${ORIGIN}/parent.html`);
+const firstOfSecondLoad = seen.length;
 await page.reload(); // second load carries the cookie set by the first
 await page.waitForTimeout(1500);
 const results = await page.evaluate(() => window.results);
-for (const [k, v] of Object.entries(results).sort()) console.log(`${v.ok ? 'PASS' : 'FAIL'} ${k}${v.detail ? ` (${v.detail})` : ''}`);
+for (const frame of ['jenkins', 'origin']) {
+  console.log(`--- frame "${frame}": script-src ${frame === 'jenkins' ? "'self'" : ORIGIN}`);
+  for (const probe of PROBES) {
+    const v = results[`${frame} ${probe}`];
+    console.log(v ? `${v.ok ? 'PASS' : 'FAIL'} ${probe}${v.detail ? ` (${v.detail})` : ''}` : `NONE ${probe} (no result: the probe did not run)`);
+  }
+}
 console.log('--- requests (second load)');
-for (const s of seen.slice(seen.lastIndexOf(seen.find((x, i) => i > 0 && x.startsWith('/parent.html'))))) console.log(s);
-if (errors.length) console.log('--- console errors\n' + errors.join('\n'));
+for (const s of seen.slice(firstOfSecondLoad)) console.log(s);
+if (errors.length) console.log('--- console errors and warnings (both loads)\n' + [...new Set(errors)].join('\n'));
 await browser.close();
 server.close();

@@ -1,10 +1,12 @@
 // What do the eval runtimes do under Jenkins's CSP, enforced and report-only,
 // when nothing checks for eval first? Serves the shipped bundles from
-// src/main/webapp/runtimes on 127.0.0.1:4332 and drives Chromium.
-// Run: node js/lab/eval-runtime-probe.mjs
+// src/main/webapp/runtimes on 127.0.0.1:4332 and drives one browser engine.
+// Run: node js/lab/eval-runtime-probe.mjs [chromium|firefox|webkit]
 import http from 'node:http';
 import { readFileSync } from 'node:fs';
-import { chromium } from '@playwright/test';
+import * as playwright from '@playwright/test';
+
+const engine = process.argv[2] || 'chromium';
 
 const CSP = "base-uri 'none'; default-src 'self'; form-action 'self'; frame-ancestors 'self'; img-src 'self' data:; script-src 'report-sample' 'self' usage.jenkins.io; style-src 'report-sample' 'self' 'unsafe-inline'";
 const bundle = (id) => readFileSync(new URL(`../../src/main/webapp/runtimes/${id}.js`, import.meta.url), 'utf8');
@@ -51,7 +53,8 @@ const server = http.createServer((req, res) => {
 });
 await new Promise((r) => server.listen(4332, '127.0.0.1', r));
 
-const browser = await chromium.launch();
+const browser = await playwright[engine].launch();
+console.log(`=== eval runtime probe: ${engine} ${browser.version()}`);
 for (const mode of ['content-security-policy', 'content-security-policy-report-only']) {
   header = mode;
   const page = await browser.newPage();

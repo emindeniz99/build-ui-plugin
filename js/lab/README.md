@@ -13,7 +13,11 @@ node js/lab/run5.mjs                 # style, import and inline-handler probes
 node js/lab/run-compare.mjs          # Preact vs Solid 2 on one complex form
 node js/lab/alpine-shadow-probe.mjs  # Alpine lifecycle inside shadow roots
 node js/lab/eval-runtime-probe.mjs   # alpine3 and vue3 bundles, enforced and report-only CSP
+node js/lab/sandbox-probe.mjs        # what runs in <iframe sandbox="allow-scripts"> under Jenkins's CSP
 ```
+
+The two probes take the engine as an argument (`chromium`, the default,
+`firefox` or `webkit`). CI runs both in every engine of the browser job.
 
 Run these from the repository root.
 
