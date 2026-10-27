@@ -29,6 +29,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
@@ -89,7 +90,11 @@ class GitRefsProviderTest {
     private static void gitIn(Path dir, String... args) throws Exception {
         List<String> cmd = new ArrayList<>(List.of("git", "-C", dir.toString()));
         cmd.addAll(List.of(args));
-        Process p = new ProcessBuilder(cmd).inheritIO().start();
+        ProcessBuilder pb = new ProcessBuilder(cmd).inheritIO();
+        // CI runners have no global git identity; commits and annotated tags need one.
+        pb.environment().putAll(Map.of("GIT_AUTHOR_NAME", "test", "GIT_AUTHOR_EMAIL", "test@example.invalid",
+                "GIT_COMMITTER_NAME", "test", "GIT_COMMITTER_EMAIL", "test@example.invalid"));
+        Process p = pb.start();
         assertEquals(0, p.waitFor(), String.join(" ", cmd));
     }
 
