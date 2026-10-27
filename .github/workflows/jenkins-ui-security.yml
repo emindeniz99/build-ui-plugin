@@ -11,11 +11,11 @@ on:
   push:
     branches: [main]
     paths:
-      - "projects/jenkins-ui/**"
+      - "**"
       - ".github/workflows/jenkins-ui-*.yml"
   pull_request:
     paths:
-      - "projects/jenkins-ui/**"
+      - "**"
       - ".github/workflows/jenkins-ui-*.yml"
 
 permissions:
@@ -48,5 +48,5 @@ jobs:
       - run: >-
           go run github.com/zricethezav/gitleaks/v8@v8.30.1 git
           --redact --exit-code 1
-          --log-opts="-- projects/jenkins-ui .github/workflows/jenkins-ui-ci.yml .github/workflows/jenkins-ui-release.yml .github/workflows/jenkins-ui-security.yml"
+          --log-opts="-- . .github/workflows/jenkins-ui-ci.yml .github/workflows/jenkins-ui-release.yml .github/workflows/jenkins-ui-security.yml"
           .
