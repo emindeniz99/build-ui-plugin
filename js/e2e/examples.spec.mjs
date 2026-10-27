@@ -38,7 +38,7 @@ test('parallel-envs: cards show each environment\'s last build from structured h
   await expect(page.locator('[data-env="env-1"] .last')).toHaveText('#2 SUCCESS · main');
   await expect(page.locator('[data-env="env-6"] .last')).toHaveText('no build yet');
 
-  await page.locator('input[name="search"]').fill('load');
+  await page.locator('input[name="search"]').fill('stress');
   await expect(page.locator('[data-env]')).toHaveCount(1);
   await page.locator('button[name="select-all"]').click();
   await page.locator('input[name="search"]').fill('');
