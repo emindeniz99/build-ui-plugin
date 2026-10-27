@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { build } from 'esbuild';
 
-const contract = JSON.parse(readFileSync(
+export const contract = JSON.parse(readFileSync(
   new URL('../../src/main/resources/io/jenkins/plugins/buildui/contract.json', import.meta.url), 'utf8'));
 
 // ---- Groovy scanning ----------------------------------------------------
@@ -163,7 +163,7 @@ const columnOf = (src, offset) => offset - src.lastIndexOf('\n', offset - 1);
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 // Mirrors Schema.check in the controller, which rejects these when the job is configured.
-function checkSchema(schema, at, report) {
+export function checkSchema(schema, at, report) {
   if (typeof schema === 'boolean') return;
   const where = `schema${at ? ' at ' + at : ''}`;
   if (!isObject(schema)) {
@@ -214,7 +214,7 @@ const JSON_MAX_CHARS = 256 * 1024;
 const JSON_MAX_DEPTH = 32;
 const JSON_MAX_ITEMS = 1000;
 
-function parseJson(field, text, report) {
+export function parseJson(field, text, report) {
   if (text.length > JSON_MAX_CHARS) {
     report('error', `${field} is ${text.length} characters; the limit is ${JSON_MAX_CHARS}`);
     return undefined;
@@ -381,7 +381,7 @@ const FORM_FROM_MAX_CHARS = 200;
 const FORM_FROM_MAX_CODE_BYTES = 512 * 1024;
 const FORM_FROM_FIELDS = ['module', 'html', 'css', 'schema', 'defaultJson'];
 
-function formFromPathError(p) {
+export function formFromPathError(p) {
   if (p.length > FORM_FROM_MAX_CHARS) return `formFrom is ${p.length} characters; the limit is ${FORM_FROM_MAX_CHARS}`;
   if (!/^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/.test(p)) {
     return `formFrom '${p}' must be a folder relative to the repository root: letters, digits, '.', '_' and '-' separated by '/',`
@@ -391,33 +391,52 @@ function formFromPathError(p) {
   return dots ? `formFrom '${p}' must not contain '${dots}'` : null;
 }
 
-/** Checks a formFrom folder on disk like inline fields; problems carry the file name. */
-async function checkFolder(root, rel, runtime, report) {
+const FORM_FROM_FILES = [['form.mjs', FORM_FROM_MAX_CODE_BYTES], ['form.html', FORM_FROM_MAX_CODE_BYTES],
+  ['form.css', FORM_FROM_MAX_CODE_BYTES], ['schema.json', JSON_MAX_CHARS], ['default.json', JSON_MAX_CHARS]];
+
+/**
+ * Reads a formFrom folder with the controller's size limits. Returns null when
+ * the folder does not exist, else { files, errors }: files maps each of the five
+ * file names to its text, or null when it is missing, blank or too large;
+ * errors are [{ file, message }].
+ */
+export function readFormFolder(root, rel) {
   const dir = path.join(root, rel);
   let isDir = false;
   try { isDir = statSync(dir).isDirectory(); } catch { /* missing */ }
-  if (!isDir) {
+  if (!isDir) return null;
+  const files = {};
+  const errors = [];
+  for (const [file, limit] of FORM_FROM_FILES) {
+    let text = null;
+    try { text = readFileSync(path.join(dir, file), 'utf8'); } catch (e) {
+      if (e.code !== 'ENOENT') throw e;
+    }
+    if (text !== null && Buffer.byteLength(text) > limit) {
+      errors.push({ file, message: `larger than ${limit / 1024} KiB; the controller refuses it` });
+      text = null;
+    }
+    files[file] = text === null || text.trim() === '' ? null : text;
+  }
+  return { files, errors };
+}
+
+/** The repository root for formFrom paths: the Git top level of `file`, else its directory. */
+export function repoRoot(file) {
+  const git = spawnSync('git', ['-C', path.dirname(file), 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
+  return git.status === 0 ? git.stdout.trim() : path.dirname(file);
+}
+
+/** Checks a formFrom folder on disk like inline fields; problems carry the file name. */
+async function checkFolder(root, rel, runtime, report) {
+  const folder = readFormFolder(root, rel);
+  if (!folder) {
     report('warning', `formFrom folder '${rel}' is not under ${root}, so its files were not checked; Jenkins reads it from the branch head`);
     return;
   }
   const at = (file) => (level, message) => report(level, `${rel}/${file}: ${message}`);
-  const read = (file, limit) => {
-    let text;
-    try { text = readFileSync(path.join(dir, file), 'utf8'); } catch (e) {
-      if (e.code === 'ENOENT') return null;
-      throw e;
-    }
-    if (Buffer.byteLength(text) > limit) {
-      at(file)('error', `larger than ${limit / 1024} KiB; the controller refuses it`);
-      return null;
-    }
-    return text.trim() === '' ? null : text;
-  };
-  const mjs = read('form.mjs', FORM_FROM_MAX_CODE_BYTES);
-  const html = read('form.html', FORM_FROM_MAX_CODE_BYTES);
-  read('form.css', FORM_FROM_MAX_CODE_BYTES);
-  const schemaText = read('schema.json', JSON_MAX_CHARS);
-  const defaultText = read('default.json', JSON_MAX_CHARS);
+  for (const { file, message } of folder.errors) at(file)('error', message);
+  const { 'form.mjs': mjs, 'form.html': html, 'schema.json': schemaText, 'default.json': defaultText } = folder.files;
 
   let htmlModule = null;
   if (html !== null) {
@@ -583,10 +602,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       errors++;
       continue;
     }
-    // formFrom paths are relative to the repository root: the Git top level of the file, else its directory.
-    const git = spawnSync('git', ['-C', path.dirname(full), 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
-    const root = git.status === 0 ? git.stdout.trim() : path.dirname(full);
-    for (const p of await checkSource(src, { root })) {
+    // formFrom paths are relative to the repository root.
+    for (const p of await checkSource(src, { root: repoRoot(full) })) {
       if (p.level === 'error') errors++;
       if (p.message === NO_CALLS) empty++;
       console.log(`${file}:${p.line}:${p.column}: ${p.level}: ${p.message}`);
