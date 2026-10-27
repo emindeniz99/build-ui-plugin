@@ -106,7 +106,9 @@ jobs:
         with:
           node-version: "24.22.1"
       - run: pnpm --dir js install --frozen-lockfile
+      # One run hung here for 30 minutes; a normal install takes a few.
       - run: pnpm --dir js exec playwright install --with-deps ${BROWSERS//,/ }
+        timeout-minutes: 10
       - name: Start Jenkins with the plugin (development mode enforces CSP)
         run: |
           versions=()
