@@ -389,14 +389,17 @@ public class UiParameterDefinition extends SimpleParameterDefinition {
         JsonNode ref = schema.get("x-git-ref");
         if (ref != null && value.isTextual()) {
             String kind = ref.isTextual() ? ref.asText() : "any";
+            JsonNode repo = schema.get("x-git-repository");
+            String repository = repo == null ? null : repo.asText();
             RefLookup lookup = RefLookup.find();
             if (lookup == null) {
                 errors.add((at.isEmpty() ? "/" : at) + ": x-git-ref needs the Git plugin");
             } else {
                 try (ACLContext ignored = ACL.as2(ACL.SYSTEM2)) {
-                    if (!lookup.hasRef(job, value.asText(), kind)) {
+                    if (!lookup.hasRef(job, value.asText(), kind, repository)) {
                         errors.add((at.isEmpty() ? "/" : at) + ": '" + value.asText() + "' is not a "
-                                + (kind.equals("any") ? "branch or tag" : kind) + " of " + job.getFullName() + "'s repository");
+                                + (kind.equals("any") ? "branch or tag" : kind) + " of " + job.getFullName() + "'s repository"
+                                + (repository == null ? "" : " matching '" + repository + "'"));
                     }
                 } catch (NoRepositoryYetException e) {
                     // Nothing to check against before the first checkout.

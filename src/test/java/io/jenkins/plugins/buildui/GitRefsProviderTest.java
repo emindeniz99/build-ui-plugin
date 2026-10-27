@@ -54,6 +54,10 @@ class GitRefsProviderTest {
     @TempDir
     static Path repo;
 
+    /** A second repository for jobs that check out two. */
+    @TempDir
+    static Path tools;
+
     @BeforeAll
     static void makeRepository() throws Exception {
         // The Git plugin refuses file: URLs unless told otherwise (SECURITY-2478); only this test needs one.
@@ -68,10 +72,21 @@ class GitRefsProviderTest {
             git("tag", tag);
         }
         git("tag", "-a", "-m", "release", "v1.1");
+
+        gitIn(tools, "init", "-q", "-b", "main");
+        Files.writeString(tools.resolve("README"), "tools");
+        gitIn(tools, "add", "README");
+        gitIn(tools, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "first");
+        gitIn(tools, "branch", "hotfix/1");
+        gitIn(tools, "tag", "tools-2.0");
     }
 
     private static void git(String... args) throws Exception {
-        List<String> cmd = new ArrayList<>(List.of("git", "-C", repo.toString()));
+        gitIn(repo, args);
+    }
+
+    private static void gitIn(Path dir, String... args) throws Exception {
+        List<String> cmd = new ArrayList<>(List.of("git", "-C", dir.toString()));
         cmd.addAll(List.of(args));
         Process p = new ProcessBuilder(cmd).inheritIO().start();
         assertEquals(0, p.waitFor(), String.join(" ", cmd));
@@ -299,6 +314,120 @@ class GitRefsProviderTest {
         }
     }
 
+    private static Page rawQuery(JenkinsRule j, String args) throws Exception {
+        return j.createWebClient().withThrowExceptionOnFailingStatusCode(false)
+                .goTo("build-ui/query/gitRefs?args=" + URLEncoder.encode(args, StandardCharsets.UTF_8), null);
+    }
+
+    /** A job that checks out {@link #repo} and then {@link #tools}, as a job with an app and a tools repository does. */
+    private static WorkflowJob twoRepositoryJob(JenkinsRule j, String name, String parameters) throws Exception {
+        WorkflowJob job = j.createProject(WorkflowJob.class, name);
+        job.setDefinition(new CpsFlowDefinition(parameters
+                + "node { dir('app') { git url: '" + repo.toUri() + "', branch: 'main' }\n"
+                + "  dir('tools') { git url: '" + tools.toUri() + "', branch: 'main' } }\n"
+                + "echo \"CFG=${params.CFG}\"", true));
+        j.buildAndAssertSuccess(job);
+        return job;
+    }
+
+    @Test
+    void pagesWithOffsetAndCountsWhatIsLeftSoAFormCanAskForMore(JenkinsRule j) throws Exception {
+        // Repositories with thousands of tags must not reach the browser in one answer, and a form
+        // that shows the first page has to know whether a second one exists.
+        job(j, "app", "");
+        JenkinsRule.WebClient wc = j.createWebClient();
+        JsonNode page = query(wc, "{\"job\":\"app\",\"offset\":2,\"limit\":2}");
+        assertEquals(List.of("v1.1", "v1.10.0"), names(page.get("tags")));
+        assertEquals(List.of("release/2026.10"), names(page.get("branches")));
+        assertEquals(6, page.at("/total/tags").asInt());
+        assertEquals(3, page.at("/total/branches").asInt());
+
+        JsonNode past = query(wc, "{\"job\":\"app\",\"offset\":50}");
+        assertEquals(List.of(), names(past.get("tags")));
+        assertEquals(6, past.at("/total/tags").asInt());
+        // A negative offset is the first page, as a too small limit is one entry.
+        assertEquals(List.of("nightly"), names(query(wc, "{\"job\":\"app\",\"offset\":-5,\"limit\":0}").get("tags")));
+    }
+
+    @Test
+    void searchIsACaseInsensitiveSubstringAppliedAfterTheGlobs(JenkinsRule j) throws Exception {
+        job(j, "app", "");
+        JenkinsRule.WebClient wc = j.createWebClient();
+        JsonNode rc = query(wc, "{\"job\":\"app\",\"search\":\"RC\"}");
+        assertEquals(List.of("v1.10.0-rc1"), names(rc.get("tags")));
+        assertEquals(1, rc.at("/total/tags").asInt());
+        assertEquals(List.of("feature/login"), names(query(wc, "{\"job\":\"app\",\"search\":\"log\"}").get("branches")));
+        // The search is literal: a '*' in it is a character to find, not a wildcard.
+        JsonNode star = query(wc, "{\"job\":\"app\",\"search\":\"v*\"}");
+        assertEquals(0, star.at("/total/tags").asInt());
+        assertEquals(List.of("v1.10.0"), names(query(wc, "{\"job\":\"app\",\"tags\":\"v1.*\",\"search\":\"10.0\",\"sort\":\"version-desc\",\"limit\":1}").get("tags")));
+
+        Page tooLong = rawQuery(j, "{\"job\":\"app\",\"search\":\"" + "x".repeat(101) + "\"}");
+        assertEquals(400, tooLong.getWebResponse().getStatusCode());
+    }
+
+    @Test
+    void repositoryPicksOneOfTheJobsOwnRemotesAndNeverAnyOtherUrl(JenkinsRule j) throws Exception {
+        twoRepositoryJob(j, "app", "");
+        JenkinsRule.WebClient wc = j.createWebClient();
+        // Without it, every repository the job checked out.
+        assertEquals(List.of("feature/login", "hotfix/1", "main", "main", "release/2026.10"),
+                names(query(wc, "{\"job\":\"app\"}").get("branches")));
+
+        String toolsUrl = tools.toUri().toString();
+        JsonNode exact = query(wc, "{\"job\":\"app\",\"repository\":\"" + toolsUrl + "\"}");
+        assertEquals(List.of("hotfix/1", "main"), names(exact.get("branches")));
+        assertEquals(List.of("tools-2.0"), names(exact.get("tags")));
+        assertTrue(StreamSupport.stream(exact.get("branches").spliterator(), false)
+                .allMatch(r -> r.get("repository").asText().equals(toolsUrl)));
+        JsonNode glob = query(wc, "{\"job\":\"app\",\"repository\":\"*/" + repo.getFileName() + "/\"}");
+        assertEquals(List.of("feature/login", "main", "release/2026.10"), names(glob.get("branches")));
+
+        // A URL the job does not use selects nothing; it is never contacted.
+        Page other = rawQuery(j, "{\"job\":\"app\",\"repository\":\"https://git.example.invalid/x.git\"}");
+        assertEquals(400, other.getWebResponse().getStatusCode());
+        assertTrue(other.getWebResponse().getContentAsString().contains("no Git repository of app matches 'https://git.example.invalid/x.git'"),
+                other.getWebResponse().getContentAsString());
+        assertEquals(400, rawQuery(j, "{\"job\":\"app\",\"repository\":\"" + "*".repeat(101) + "\"}").getWebResponse().getStatusCode());
+    }
+
+    @Test
+    void xGitRepositoryLimitsTheRefCheckToOneRepositoryOnEveryPath(JenkinsRule j) throws Exception {
+        // v1.0 is a tag of the app repository only, tools-2.0 of the tools one. A directory's file: URI ends in '/'.
+        String toolsGlob = "*/" + tools.getFileName() + "/";
+        WorkflowJob job = twoRepositoryJob(j, "two", "properties([parameters([uiParameter(name: 'CFG', module: 'export default () => {}', "
+                + "schema: '{\"type\":\"object\",\"properties\":{\"tag\":{\"type\":\"string\",\"x-git-ref\":\"tag\",\"x-git-repository\":\""
+                + toolsGlob + "\"}}}')])])\n");
+
+        // Form and buildWithParameters: a tag of the other repository is refused.
+        assertEquals(201, buildWithParameters(j, "two", "{\"tag\":\"tools-2.0\"}").getWebResponse().getStatusCode());
+        j.waitUntilNoActivity();
+        j.assertLogContains("CFG={\"tag\":\"tools-2.0\"}", job.getLastBuild());
+        Page bad = buildWithParameters(j, "two", "{\"tag\":\"v1.0\"}");
+        assertEquals(400, bad.getWebResponse().getStatusCode());
+        assertTrue(bad.getWebResponse().getContentAsString().contains("/tag: 'v1.0' is not a tag of two's repository matching '" + toolsGlob + "'"),
+                bad.getWebResponse().getContentAsString());
+
+        // Queued without a request: RefGuard applies the same repository.
+        int before = job.getLastBuild().getNumber();
+        QueueTaskFuture<WorkflowRun> queued = job.scheduleBuild2(0, new ParametersAction(new StringParameterValue("CFG", "{\"tag\":\"v1.0\"}")));
+        assertNotNull(queued);
+        assertThrows(CancellationException.class, () -> queued.get(60, TimeUnit.SECONDS));
+        assertEquals(before, job.getLastBuild().getNumber());
+    }
+
+    @Test
+    void xGitRepositoryMustBeAShortGlobNextToXGitRef() {
+        UiParameterDefinition d = new UiParameterDefinition("CFG");
+        IllegalArgumentException alone = assertThrows(IllegalArgumentException.class,
+                () -> d.setSchema("{\"type\":\"string\",\"x-git-repository\":\"*tools*\"}"));
+        assertTrue(alone.getMessage().contains("x-git-repository needs x-git-ref"), alone.getMessage());
+        assertThrows(IllegalArgumentException.class, () -> d.setSchema("{\"type\":\"string\",\"x-git-ref\":\"tag\",\"x-git-repository\":1}"));
+        assertThrows(IllegalArgumentException.class,
+                () -> d.setSchema("{\"type\":\"string\",\"x-git-ref\":\"tag\",\"x-git-repository\":\"" + "*".repeat(101) + "\"}"));
+        d.setSchema("{\"type\":\"string\",\"x-git-ref\":\"tag\",\"x-git-repository\":\"" + "*".repeat(100) + "\"}");
+    }
+
     @Test
     void anUnknownXGitRefKindFailsWhenTheJobIsConfigured() {
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> new UiParameterDefinition("CFG")
@@ -307,8 +436,12 @@ class GitRefsProviderTest {
     }
 
     private static Page buildWithParameters(JenkinsRule j, String value) throws Exception {
+        return buildWithParameters(j, "release", value);
+    }
+
+    private static Page buildWithParameters(JenkinsRule j, String job, String value) throws Exception {
         JenkinsRule.WebClient wc = j.createWebClient().withThrowExceptionOnFailingStatusCode(false).withRedirectEnabled(false);
-        WebRequest req = new WebRequest(URI.create(j.getURL() + "job/release/buildWithParameters?CFG="
+        WebRequest req = new WebRequest(URI.create(j.getURL() + "job/" + job + "/buildWithParameters?CFG="
                 + URLEncoder.encode(value, StandardCharsets.UTF_8)).toURL(), HttpMethod.POST);
         return wc.getPage(wc.addCrumb(req));
     }

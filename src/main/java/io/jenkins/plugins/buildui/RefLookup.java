@@ -1,5 +1,6 @@
 package io.jenkins.plugins.buildui;
 
+import edu.umd.cs.findbugs.annotations.CheckForNull;
 import hudson.ExtensionList;
 import hudson.model.Job;
 
@@ -11,8 +12,12 @@ import hudson.model.Job;
  */
 public interface RefLookup {
 
-    /** {@code kind} is {@code branch}, {@code tag} or {@code any}. */
-    boolean hasRef(Job<?, ?> job, String name, String kind);
+    /**
+     * {@code kind} is {@code branch}, {@code tag} or {@code any}.
+     * {@code repository} is null for every repository of the job, or a glob
+     * of the remote URLs to look in ({@code x-git-repository}).
+     */
+    boolean hasRef(Job<?, ?> job, String name, String kind, @CheckForNull String repository);
 
     static RefLookup find() {
         for (DataProvider provider : ExtensionList.lookup(DataProvider.class)) {
