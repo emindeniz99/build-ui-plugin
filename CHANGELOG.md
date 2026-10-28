@@ -1,12 +1,12 @@
 # Changelog
 
-## 0.1.0
+### 0.1.0 highlights
 
 The first release. It needs Jenkins 2.541.1 or newer and Java 17. The
 project grew in a monorepo before this release; this repository keeps that
 history.
 
-### Forms
+#### Forms
 
 - `uiParameter`: a build parameter whose form the Jenkinsfile writes as an ES
   module with HTML and CSS. The value is one JSON string in `params.NAME`,
@@ -35,7 +35,7 @@ history.
   `schema.json`. Other job types and the `input` step show the reason and the
   JSON field.
 
-### Data providers
+#### Data providers
 
 - `jenkinsRuns`: recent builds of a readable job; with `parameter`, each run's
   past value of a build-ui parameter, never passwords or other parameters.
@@ -56,7 +56,7 @@ history.
 - No provider accepts a URL from the browser, and credentials stay on the
   controller.
 
-### Safety and quality
+#### Safety and quality
 
 - Works with Jenkins's enforced Content Security Policy and never loosens it.
 - JSON limits: 256 KiB, depth 32, 1000 items or properties; regular
@@ -77,7 +77,7 @@ history.
 - Examples: a reference form, parallel environment deploys, a release form
   and a `formFrom` folder, all run by the browser test suite.
 
-### Runtimes that need eval (optional)
+#### Runtimes that need eval (optional)
 
 - `alpine3` (Alpine 3.17.4) and `vue3` (Vue 3.5.44 with its template
   compiler), off by default. An admin allows them with *Allow runtimes that
@@ -88,14 +88,14 @@ history.
   enforced, the form says its runtime needs eval and shows the JSON field.
 - The checker warns about these runtimes.
 
-### Approval (optional)
+#### Approval (optional)
 
 - *Require approval of form code*, off by default: an admin approves each
   form's exact code under In-process Script Approval before Jenkins sends it
   to a browser. Until then the form shows its JSON field, and builds keep
   working. Configuration as Code: `unclassified.buildUi.requireApproval`.
 
-### Sandbox (optional)
+#### Sandbox (optional)
 
 - `sandbox: true` on `uiParameter` or `uiPanel` runs the form's code in
   `<iframe sandbox="allow-scripts">`: no cookies, no Jenkins API, no access to

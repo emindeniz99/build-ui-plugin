@@ -752,25 +752,34 @@ Jenkins* » *Plugins* » *Advanced settings*.
 
 ### Release
 
-Push a tag `v<major>.<minor>.<patch>` on a commit of `main`. The
-`release` workflow builds the plugin at that version, runs its
-tests, and attaches `build-ui.hpi` and its SHA-256 to a GitHub Release with
-`CHANGELOG.md` as the notes. Update `CHANGELOG.md` first. The tag prefix
-lives in `.github/workflows/release.yml`.
+Releases come from a pull request. On every push to `main`, the
+`release-please` workflow opens or updates one pull request titled
+`chore(release): release <version>`, which sets the next version from the
+commit types (CONTRIBUTING » Commits) and adds its `CHANGELOG.md` entry.
+Merge it, and release-please tags the merge commit `v<version>`, creates the
+GitHub Release, and starts the `release` workflow at the tag. That workflow
+builds the plugin at that version, runs its tests, and attaches
+`build-ui.hpi` and its SHA-256 to the Release. While the version is below
+1.0, a breaking change raises the minor version; 1.0 needs a commit with a
+`Release-As: 1.0.0` footer. A `v*` tag pushed by hand also starts `release`.
 
-No release has been cut yet (2026-10-27). `CI` and `security` run on every
+The `release-please` workflow needs the repository setting *Allow GitHub
+Actions to create and approve pull requests* (Settings » Actions » General).
+
+No release has been cut yet (2026-10-28). `CI` and `security` run on every
 push to `main` and pass there. On commit 355ddaf, CI run 40563677204 passed
 every job: the plugin on 2.541.1 and 2.580.1, the runtime bundles, and the
 browser tests in Chromium on 2.541.1 and in Chromium, Firefox and WebKit on
 2.580.1. The three-engine browser job passed on its second attempt; the first
 stopped at the 10-minute limit of `playwright install` while the runner's
 apt mirror was slow. Security run 40563677210 passed both of its jobs. `release` runs
-only for a tag, so it has not run yet. Before the first tag:
+only for a tag, so it has not run yet. Before the first release:
 
-1. Check that the repository's default workflow token is read-only.
+1. Check that the repository's default workflow token is read-only, and
+   turn on *Allow GitHub Actions to create and approve pull requests*.
 2. Check that the latest `CI` and `security` runs on `main` passed.
-3. Push the `v0.1.0` tag and check that the Release carries `build-ui.hpi` and
-   its checksum.
+3. Merge the `chore(release): release 0.1.0` pull request and check that the
+   Release carries `build-ui.hpi` and its checksum.
 
 `security` lints the workflows with zizmor 1.31.1 and scans the repository's
 history for secrets with gitleaks v8.30.1. Neither found anything in run

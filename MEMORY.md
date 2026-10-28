@@ -18,7 +18,7 @@ tests with Git Parameter, Active Choices and job renames. `CI` and
 `security` run on every push to `main` and pass there (README » Release has
 the run ids): the plugin on both lines, and the browser suite with
 Playwright 1.64.1 in Chromium on 2.541.1 and in Chromium, Firefox and
-WebKit on 2.580.1. `release` runs only for a tag; no tag yet (README »
+WebKit on 2.580.1. Releases come from release-please's pull request; 0.1.0 is not cut yet (README »
 Release). Locally only Playwright 1.56.1's Chromium exists: run the browser
 suites with `CHROMIUM_EXECUTABLE_PATH` (CONTRIBUTING); Firefox and WebKit
 run only in CI. Open items: `docs/design.md` section 10.

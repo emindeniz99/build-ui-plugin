@@ -108,8 +108,9 @@ Use Conventional Commits with a mandatory scope:
 | `preview` | `js/preview/` and its tests |
 | `js` | Other JS tooling: `js/e2e/`, `js/lab/`, `package.json`, Playwright configs |
 | `docs` | `README.md`, `docs/`, `CHANGELOG.md`, `examples/` |
-| `ci` | `.github/` |
+| `ci` | `.github/`, `release-please-config.json` |
 | `deps` | Dependency updates |
+| `release` | The release pull request that release-please opens |
 
 Types: `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `chore`, `build`,
 `ci`, `revert`. Pick the one that fits, and `chore` when none does.
@@ -122,6 +123,10 @@ Types: `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `chore`, `build`,
   them in one session. Name only that commit's paths when you stage.
 - Mark a breaking change with `!` after the scope and a
   `BREAKING CHANGE:` footer with the migration.
+- The type decides the next version: `feat` and a breaking change raise
+  the minor version while the project is below 1.0, and `fix` raises the
+  patch. `feat`, `fix`, `perf`, `build` and `revert` commits appear in
+  `CHANGELOG.md`; the other types do not.
 
 Examples:
 

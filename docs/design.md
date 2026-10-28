@@ -375,7 +375,8 @@ JenkinsRule tests, 8 browser tests).
   through JenkinsRule pages instead.
 - A release: the workflow and `CHANGELOG.md` exist, and a local rehearsal of
   its steps built `build-ui.hpi` 0.1.0. `CI` and `security` pass on `main`;
-  the `release` workflow runs only for a tag, and no tag exists yet. README »
+  release-please opens the 0.1.0 pull request, and merging it tags the
+  release and starts the `release` workflow; neither has run yet. README »
   Release lists the steps before the first one.
 - Firefox and WebKit on the minimum line: CI runs them on 2.580.1 only.
 - Safari and mobile browsers: not tested.
