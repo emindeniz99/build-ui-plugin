@@ -1,0 +1,49 @@
+name: release-please
+
+# On every push to main, release-please opens or updates one pull request
+# that sets the next version and adds its CHANGELOG.md entry. Merging that
+# pull request makes it tag the merge commit v<version>, create the GitHub
+# Release, and start release.yml at the tag, which builds and attaches
+# build-ui.hpi. A tag pushed with the default GITHUB_TOKEN starts no other
+# workflow (GitHub's recursion guard), so the last step dispatches
+# release.yml by name; workflow_dispatch is the documented exception.
+#
+# Before 1.0 (bump-minor-pre-major in release-please-config.json) a breaking
+# change raises the minor version and a fix the patch; 1.0 comes only from
+# a commit with a "Release-As: 1.0.0" footer.
+#
+# The repository's default token stays read-only; only this job elevates.
+# The repository setting "Allow GitHub Actions to create and approve pull
+# requests" must be on, or the action cannot open its pull request.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # tag and create the GitHub Release
+      pull-requests: write # open and update the release pull request
+      actions: write # dispatch release.yml
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+      - name: Start release.yml at the new tag
+        if: ${{ steps.release.outputs.release_created }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag_name }}
+        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"

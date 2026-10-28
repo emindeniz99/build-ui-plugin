@@ -1,12 +1,17 @@
 name: release
 
-# Push a tag named v<version> (for example v0.1.0) on a
-# commit of main. The job builds the plugin at that version, runs its tests,
-# and attaches build-ui.hpi to a GitHub Release. The .hpi never goes into git.
+# release-please.yml starts this workflow at the tag it creates when a
+# release pull request merges. A v<version> tag pushed by hand starts it
+# too. The job builds the plugin at that version, runs its tests, and
+# attaches build-ui.hpi and its checksum to the tag's GitHub Release,
+# creating the Release if release-please did not. The .hpi never goes
+# into git. release-please.yml dispatches this file by name: rename both
+# together.
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -18,6 +23,7 @@ jobs:
       contents: write # create the GitHub Release
     env:
       TAG: ${{ github.ref_name }}
+      REF_TYPE: ${{ github.ref_type }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -28,6 +34,10 @@ jobs:
           java-version: "17"
       - name: Read the version from the tag
         run: |
+          if [ "$REF_TYPE" != tag ]; then
+            echo "run this workflow at a tag, not the branch $TAG" >&2
+            exit 1
+          fi
           version="${TAG#v}"
           if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "tag $TAG is not v<major>.<minor>.<patch>" >&2
@@ -43,10 +53,13 @@ jobs:
       - name: Write the checksum
         working-directory: target
         run: sha256sum build-ui.hpi | tee build-ui.hpi.sha256
-      - name: Create the GitHub Release
+      - name: Attach the plugin to the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$TAG" target/build-ui.hpi target/build-ui.hpi.sha256 \
-            --repo "$GITHUB_REPOSITORY" --verify-tag \
-            --title "build-ui $VERSION" --notes-file CHANGELOG.md
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --title "build-ui $VERSION" --notes "See CHANGELOG.md."
+          fi
+          gh release upload "$TAG" target/build-ui.hpi target/build-ui.hpi.sha256 \
+            --repo "$GITHUB_REPOSITORY" --clobber
