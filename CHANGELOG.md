@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.0 (2026-10-30)
+
+
+### Build
+
+* **ci:** cut releases from a release-please pull request ([89a6653](https://github.com/emindeniz99/build-ui-plugin/commit/89a6653424ecc1f87541c6cebc00592b3e3e4fe1))
+
 ### 0.1.0 highlights
 
 The first release. It needs Jenkins 2.541.1 or newer and Java 17. The
